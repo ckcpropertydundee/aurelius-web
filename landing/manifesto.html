@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurelius — The Manifesto</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #0D1B3E;
+    --navy-deep: #162B5B;
+    --slate: #4A5878;
+    --cool-grey: #C8C5BE;
+    --subtle: #E8E6E1;
+    --off-white: #F7F6F3;
+    --white: #FFFFFF;
+    --font-serif: Georgia, 'Times New Roman', serif;
+    --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    font-weight: 300;
+    background: var(--off-white);
+    color: var(--navy);
+    overflow-x: hidden;
+  }
+
+  /* NAV */
+  .site-nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 1000;
+    background: var(--navy);
+    border-bottom: 0.5px solid var(--navy-deep);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-wordmark {
+    font-family: var(--font-serif);
+    font-size: 13px;
+    letter-spacing: 14px;
+    color: var(--white);
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 0;
+    list-style: none;
+  }
+
+  .nav-links a {
+    display: block;
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    transition: color 0.2s;
+    white-space: nowrap;
+    font-family: var(--font-sans);
+    font-weight: 300;
+  }
+
+  .nav-links a:hover { color: var(--white); }
+  .nav-links a.active {
+    color: var(--white);
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+  }
+
+  .nav-login {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 16px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--white);
+    text-decoration: none;
+    border: 0.5px solid rgba(255,255,255,0.35);
+    background: transparent;
+    transition: background 0.2s, border-color 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-weight: 300;
+  }
+
+  .nav-login:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.6);
+  }
+
+  /* HERO */
+  .hero {
+    background: var(--navy);
+    padding: 120px 64px 96px;
+    text-align: center;
+  }
+
+  .hero-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 32px;
+  }
+
+  .hero-h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(30px, 4vw, 42px);
+    font-weight: 400;
+    color: var(--white);
+    margin-bottom: 20px;
+    line-height: 1.15;
+  }
+
+  .hero-sub {
+    font-family: var(--font-serif);
+    font-size: clamp(17px, 2vw, 22px);
+    font-weight: 400;
+    color: var(--slate);
+    line-height: 1.4;
+  }
+
+  /* SECTIONS */
+  .sections {
+    background: var(--off-white);
+  }
+
+  .manifesto-section {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 72px 64px;
+    border-top: 0.5px solid var(--subtle);
+  }
+
+  .manifesto-section:first-child {
+    border-top: none;
+  }
+
+  .section-number {
+    font-family: var(--font-serif);
+    font-size: 60px;
+    font-weight: 400;
+    color: var(--subtle);
+    line-height: 1;
+    margin-bottom: 24px;
+  }
+
+  .section-quote {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--navy);
+    line-height: 1.55;
+    margin-bottom: 20px;
+  }
+
+  .section-body {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.7;
+    margin-bottom: 28px;
+  }
+
+  .section-response {
+    border-top: 0.5px solid var(--navy-deep);
+    padding-top: 14px;
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--navy-deep);
+  }
+
+  /* WHAT WE BELIEVE */
+  .beliefs {
+    background: var(--navy);
+    padding: 80px 64px;
+  }
+
+  .beliefs-title {
+    font-family: var(--font-serif);
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--off-white);
+    margin-bottom: 48px;
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .beliefs-table {
+    max-width: 760px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .beliefs-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    padding-bottom: 16px;
+    border-bottom: 0.5px solid var(--navy-deep);
+    margin-bottom: 0;
+  }
+
+  .beliefs-col-label {
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--slate);
+    padding: 0 0 0 0;
+  }
+
+  .beliefs-col-label.right {
+    padding-left: 32px;
+  }
+
+  .beliefs-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    padding: 18px 0;
+    border-bottom: 0.5px solid var(--navy-deep);
+    align-items: center;
+  }
+
+  .beliefs-old {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.5;
+  }
+
+  .beliefs-new {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--off-white);
+    line-height: 1.5;
+    padding-left: 32px;
+  }
+
+  /* FOOTER CTA */
+  .footer-cta {
+    background: var(--off-white);
+    padding: 72px 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 40px;
+    border-top: 0.5px solid var(--subtle);
+  }
+
+  .footer-cta-tagline {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--navy);
+    margin-bottom: 10px;
+  }
+
+  .footer-cta-meta {
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+  }
+
+  .btn-waitlist {
+    display: inline-flex;
+    align-items: center;
+    background: var(--navy);
+    color: var(--off-white);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 16px 36px;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .btn-waitlist:hover { opacity: 0.85; }
+
+  /* FLOOR BAR */
+  .floor-bar {
+    background: var(--navy);
+    padding: 24px 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 0.5px solid var(--navy-deep);
+  }
+
+  .floor-wordmark {
+    font-family: var(--font-serif);
+    font-size: 11px;
+    letter-spacing: 10px;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+
+  .floor-meta {
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 1.5px;
+    color: var(--slate);
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    .site-nav { padding: 0 20px; }
+    .nav-links { display: none; }
+    .nav-login { padding: 7px 12px; }
+
+    .hero { padding: 88px 24px 72px; }
+
+    .manifesto-section { padding: 56px 24px; }
+
+    .beliefs { padding: 60px 24px; }
+    .beliefs-title { margin-bottom: 36px; }
+
+    .footer-cta {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 56px 24px;
+      gap: 32px;
+    }
+
+    .floor-bar {
+      flex-direction: column;
+      gap: 10px;
+      text-align: center;
+      padding: 24px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="site-nav">
+  <a href="index.html" class="nav-wordmark">Aurelius</a>
+  <div class="nav-right">
+    <ul class="nav-links">
+      <li><a href="#">The Control Panel</a></li>
+      <li><a href="#">Automation Engine</a></li>
+      <li><a href="#">Investor Lens</a></li>
+      <li><a href="index.html">Tenant Experience</a></li>
+      <li><a href="manifesto.html" class="active">The Manifesto</a></li>
+    </ul>
+    <a href="https://aurelius-web-nine.vercel.app" class="nav-login">Log in</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">Concept 05 &middot; The Anti-Letting Agency Manifesto</div>
+  <h1 class="hero-h1">The letting agency model is broken.</h1>
+  <p class="hero-sub">We built something better.</p>
+</div>
+
+<!-- FOUR SECTIONS -->
+<div class="sections">
+
+  <div class="manifesto-section">
+    <div class="section-number">01</div>
+    <div class="section-quote">"They charge 12% and I still have to chase them for updates."</div>
+    <p class="section-body">Letting agents take a significant cut of your rental income and still expect landlords to manage the relationship. Phone calls go unreturned. Emails disappear into inboxes. You are paying for a service that requires constant supervision to function at all.</p>
+    <div class="section-response">Aurelius charges a transparent fixed fee. Full visibility. No chasing required.</div>
+  </div>
+
+  <div class="manifesto-section">
+    <div class="section-number">02</div>
+    <div class="section-quote">"I had no idea my tenant reported a maintenance issue three weeks ago."</div>
+    <p class="section-body">Traditional letting agents sit between landlord and tenant, filtering information — and doing it poorly. Issues get lost in email chains. By the time you hear about a problem, it has already become an expensive one. The agent, meanwhile, has moved on.</p>
+    <div class="section-response">Every report is logged in real time. You see it the moment it is raised.</div>
+  </div>
+
+  <div class="manifesto-section">
+    <div class="section-number">03</div>
+    <div class="section-quote">"The contractor they sent charged twice the going rate — and nobody told me."</div>
+    <p class="section-body">When letting agents appoint contractors, they rely on preferred supplier lists with inflated day rates — sometimes with undisclosed referral arrangements. You are billed without context, without approval, and without recourse. The agent carries no financial risk. You carry all of it.</p>
+    <div class="section-response">Approved contractors. Transparent pricing. No referral fees. No surprises.</div>
+  </div>
+
+  <div class="manifesto-section">
+    <div class="section-number">04</div>
+    <div class="section-quote">"At the end of the tenancy, the deposit dispute cost me more than the damage."</div>
+    <p class="section-body">Without thorough documentation at every stage of a tenancy, deposit disputes become unpredictable and expensive. Letting agents rarely maintain the evidence required to support a claim — and when the adjudicator rules, it is the landlord who absorbs the loss.</p>
+    <div class="section-response">Inventory tracked from day one. Every condition recorded. No ambiguity at the end.</div>
+  </div>
+
+</div>
+
+<!-- WHAT WE BELIEVE -->
+<div class="beliefs">
+  <div class="beliefs-title">What we believe.</div>
+  <div class="beliefs-table">
+    <div class="beliefs-header">
+      <div class="beliefs-col-label">Old Way</div>
+      <div class="beliefs-col-label right">Aurelius</div>
+    </div>
+    <div class="beliefs-row">
+      <div class="beliefs-old">Percentage-based fees that grow with your rent</div>
+      <div class="beliefs-new">Fixed management fee, regardless of rent</div>
+    </div>
+    <div class="beliefs-row">
+      <div class="beliefs-old">Phone calls and unreturned emails</div>
+      <div class="beliefs-new">In-app, documented, timestamped</div>
+    </div>
+    <div class="beliefs-row">
+      <div class="beliefs-old">You chase updates</div>
+      <div class="beliefs-new">Real-time notifications. No chasing.</div>
+    </div>
+    <div class="beliefs-row">
+      <div class="beliefs-old">Opaque contractor pricing</div>
+      <div class="beliefs-new">Approved rates. Full transparency.</div>
+    </div>
+    <div class="beliefs-row">
+      <div class="beliefs-old">End-of-tenancy disputes</div>
+      <div class="beliefs-new">Ongoing condition tracking from day one</div>
+    </div>
+    <div class="beliefs-row">
+      <div class="beliefs-old">Paper trails that go missing</div>
+      <div class="beliefs-new">A complete digital audit trail</div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER CTA -->
+<div class="footer-cta">
+  <div>
+    <div class="footer-cta-tagline">Property management, done properly.</div>
+    <div class="footer-cta-meta">Aurelius &middot; Dundee, Scotland &middot; Est. 2026</div>
+  </div>
+  <a href="#" class="btn-waitlist">Join the Waitlist</a>
+</div>
+
+<!-- FLOOR BAR -->
+<div class="floor-bar">
+  <span class="floor-wordmark">Aurelius</span>
+  <span class="floor-meta">Concept 05 — The Manifesto &middot; Property management, done properly.</span>
+</div>
+
+</body>
+</html>
