@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurelius — Tenant Experience</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #0D1B3E;
+    --navy-deep: #162B5B;
+    --slate: #4A5878;
+    --cool-grey: #C8C5BE;
+    --subtle: #E8E6E1;
+    --off-white: #F7F6F3;
+    --white: #FFFFFF;
+    --success: #065F46;
+    --font-serif: Georgia, 'Times New Roman', serif;
+    --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    font-weight: 300;
+    background: var(--off-white);
+    color: var(--navy);
+    overflow-x: hidden;
+  }
+
+  /* NAV */
+  .site-nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 1000;
+    background: rgba(13,27,62,0.97);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-wordmark {
+    font-family: var(--font-serif);
+    font-size: 13px;
+    letter-spacing: 14px;
+    color: var(--white);
+    text-transform: uppercase;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 0;
+    list-style: none;
+  }
+
+  .nav-links a {
+    display: block;
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    transition: color 0.2s;
+    white-space: nowrap;
+  }
+
+  .nav-links a:hover { color: var(--white); }
+  .nav-links a.active {
+    color: var(--white);
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-login {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 16px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--white);
+    text-decoration: none;
+    border: 0.5px solid rgba(255,255,255,0.35);
+    background: transparent;
+    transition: background 0.2s, border-color 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .nav-login:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.6);
+  }
+
+  /* PAGE WRAPPER */
+  .page {
+    min-height: 100vh;
+    padding-top: 56px;
+    background: var(--off-white);
+    color: var(--navy);
+  }
+
+  /* HERO */
+  .p4-hero {
+    padding: 80px 64px 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .p4-eyebrow {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 24px;
+  }
+
+  .p4-headline {
+    font-family: var(--font-serif);
+    font-size: clamp(38px, 5vw, 60px);
+    font-weight: 400;
+    line-height: 1.1;
+    margin-bottom: 24px;
+  }
+
+  .p4-sub {
+    font-size: 16px;
+    font-weight: 300;
+    line-height: 1.7;
+    color: var(--slate);
+    max-width: 480px;
+    margin: 0 auto 48px;
+  }
+
+  .btn-dark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--navy);
+    color: var(--white);
+    font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 14px 32px;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    text-decoration: none;
+  }
+
+  .btn-dark:hover { opacity: 0.85; }
+
+  /* PHONE + FEATURES */
+  .phone-section {
+    padding: 0 64px 80px;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 300px 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+
+  .phone-frame {
+    background: var(--navy);
+    border-radius: 36px;
+    padding: 12px;
+    box-shadow: 0 40px 80px rgba(13,27,62,0.2);
+  }
+
+  .phone-screen {
+    background: var(--white);
+    border-radius: 28px;
+    overflow: hidden;
+    min-height: 580px;
+  }
+
+  .phone-status {
+    background: var(--off-white);
+    color: rgba(13,27,62,0.45);
+    font-size: 10px;
+    padding: 10px 16px 6px;
+    text-align: right;
+    letter-spacing: 1px;
+  }
+
+  .phone-app-header {
+    background: var(--off-white);
+    padding: 16px 18px 12px;
+    border-bottom: 0.5px solid var(--subtle);
+  }
+
+  .phone-app-logo {
+    font-family: var(--font-serif);
+    font-size: 10px;
+    letter-spacing: 8px;
+    color: var(--navy);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .phone-app-greeting {
+    font-size: 11px;
+    color: var(--slate);
+  }
+
+  .phone-card {
+    margin: 12px;
+    background: var(--white);
+    border: 0.5px solid var(--subtle);
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .phone-card-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 8px;
+  }
+
+  .phone-card-value {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    color: var(--navy);
+    margin-bottom: 4px;
+  }
+
+  .phone-card-sub {
+    font-size: 10px;
+    color: var(--success);
+    font-weight: 300;
+  }
+
+  .phone-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 0 12px 12px;
+  }
+
+  .phone-action {
+    background: var(--navy);
+    color: var(--white);
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .phone-action.ghost-action {
+    background: transparent;
+    border: 0.5px solid var(--subtle);
+    color: var(--navy);
+  }
+
+  .phone-activity {
+    margin: 0 12px;
+  }
+
+  .phone-activity-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 8px;
+  }
+
+  .activity-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 0.5px solid var(--subtle);
+    align-items: flex-start;
+  }
+
+  .activity-item:last-child { border-bottom: none; }
+
+  .activity-icon {
+    width: 28px; height: 28px;
+    background: var(--off-white);
+    border: 0.5px solid var(--subtle);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .activity-text {
+    font-size: 11px;
+    color: var(--navy);
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .activity-time {
+    font-size: 9px;
+    color: var(--cool-grey);
+    letter-spacing: 0.5px;
+    margin-top: 3px;
+  }
+
+  /* FEATURE COLUMNS */
+  .phone-col-features {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-top: 20px;
+  }
+
+  .phone-feature {
+    border-left: 1px solid var(--subtle);
+    padding-left: 20px;
+  }
+
+  .phone-feature.right-feature {
+    border-left: none;
+    border-right: 1px solid var(--subtle);
+    padding-left: 0;
+    padding-right: 20px;
+    text-align: right;
+  }
+
+  .phone-feature-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 6px;
+  }
+
+  .phone-feature-title {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+
+  .phone-feature-desc {
+    font-size: 13px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.6;
+  }
+
+  /* STATS */
+  .stats-section {
+    background: var(--navy);
+    padding: 72px 64px;
+    color: var(--white);
+  }
+
+  .stats-grid {
+    max-width: 900px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 0.5px solid rgba(255,255,255,0.08);
+  }
+
+  .stat-cell {
+    padding: 40px 32px;
+    border-right: 0.5px solid rgba(255,255,255,0.08);
+  }
+
+  .stat-cell:last-child { border-right: none; }
+
+  .stat-num {
+    font-family: var(--font-serif);
+    font-size: 48px;
+    color: var(--white);
+    margin-bottom: 12px;
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 8px;
+  }
+
+  .stat-desc {
+    font-size: 13px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.5);
+    line-height: 1.5;
+  }
+
+  /* FOOTER */
+  .page-footer {
+    padding: 48px 64px;
+    border-top: 0.5px solid var(--subtle);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .footer-word {
+    font-family: var(--font-serif);
+    font-size: 11px;
+    letter-spacing: 10px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+  }
+
+  .footer-meta {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--cool-grey);
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    .site-nav { padding: 0 20px; }
+    .nav-links { display: none; }
+    .nav-login { padding: 7px 12px; }
+
+    .p4-hero { padding: 60px 24px 40px; }
+
+    .phone-section {
+      grid-template-columns: 1fr;
+      padding: 0 24px 60px;
+      gap: 40px;
+    }
+
+    .phone-col-features.left-col { order: 2; }
+    .phone-col-features.right-col { order: 3; }
+    .phone-frame { order: 1; }
+
+    .phone-feature.right-feature {
+      border-right: none;
+      border-left: 1px solid var(--subtle);
+      padding-right: 0;
+      padding-left: 20px;
+      text-align: left;
+    }
+
+    .stats-section { padding: 60px 24px; }
+    .stats-grid {
+      grid-template-columns: 1fr;
+      border: none;
+      gap: 1px;
+      background: rgba(255,255,255,0.08);
+    }
+    .stat-cell {
+      border-right: none;
+      border-bottom: 0.5px solid rgba(255,255,255,0.08);
+      background: var(--navy);
+    }
+    .stat-cell:last-child { border-bottom: none; }
+
+    .page-footer {
+      flex-direction: column;
+      gap: 10px;
+      text-align: center;
+      padding: 32px 24px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="site-nav">
+  <div class="nav-wordmark">Aurelius</div>
+  <div class="nav-right">
+    <ul class="nav-links">
+      <li><a href="#">The Control Panel</a></li>
+      <li><a href="#">Automation Engine</a></li>
+      <li><a href="#">Investor Lens</a></li>
+      <li><a href="#" class="active">Tenant Experience</a></li>
+      <li><a href="#">The Manifesto</a></li>
+    </ul>
+    <a href="https://aurelius-web-nine.vercel.app" class="nav-login">Log in</a>
+  </div>
+</nav>
+
+<!-- PAGE -->
+<div class="page">
+
+  <!-- HERO -->
+  <div class="p4-hero">
+    <h1 class="p4-headline">Renting, without<br>the friction.</h1>
+    <p class="p4-sub">Pay rent, report issues, receive documents — everything you need to manage your tenancy in one place. No phone calls. No email chains.</p>
+    <a href="#" class="btn-dark">Download the app</a>
+  </div>
+
+  <!-- PHONE + FEATURES -->
+  <div class="phone-section">
+
+    <!-- Left features -->
+    <div class="phone-col-features left-col" style="text-align: right; align-items: flex-end;">
+      <div class="phone-feature right-feature">
+        <div class="phone-feature-label">Payment</div>
+        <div class="phone-feature-title">Rent. One tap.</div>
+        <div class="phone-feature-desc">Set up automatic collection or pay manually. Always on time, always with a receipt.</div>
+      </div>
+      <div class="phone-feature right-feature">
+        <div class="phone-feature-label">Documents</div>
+        <div class="phone-feature-title">Your tenancy. Organised.</div>
+        <div class="phone-feature-desc">Tenancy agreement, inventory, safety certificates — always available, always current.</div>
+      </div>
+      <div class="phone-feature right-feature">
+        <div class="phone-feature-label">Communication</div>
+        <div class="phone-feature-title">No more phone tag.</div>
+        <div class="phone-feature-desc">Communicate through the app. Every message logged. No he-said-she-said.</div>
+      </div>
+    </div>
+
+    <!-- Phone -->
+    <div class="phone-frame">
+      <div class="phone-screen">
+        <div class="phone-status">9:41</div>
+        <div class="phone-app-header">
+          <div class="phone-app-logo">Aurelius</div>
+          <div class="phone-app-greeting">Good morning, Sarah</div>
+        </div>
+        <div class="phone-card">
+          <div class="phone-card-label">Rent Due</div>
+          <div class="phone-card-value">£950</div>
+          <div class="phone-card-sub">&#10003; Auto-collected 1 Jun · Confirmed</div>
+        </div>
+        <div class="phone-action-row">
+          <div class="phone-action">Report Issue</div>
+          <div class="phone-action ghost-action">Documents</div>
+        </div>
+        <div class="phone-activity">
+          <div class="phone-activity-label">Recent Activity</div>
+          <div class="activity-item">
+            <div class="activity-icon">&#128295;</div>
+            <div style="flex:1;">
+              <div class="activity-text">Boiler service completed — Caledonian Heating</div>
+              <div class="activity-time">Today, 11:24am</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-icon">&#10003;</div>
+            <div style="flex:1;">
+              <div class="activity-text">Rent receipt issued — May 2026 — £950</div>
+              <div class="activity-time">01 May, 00:01am</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-icon">&#128196;</div>
+            <div style="flex:1;">
+              <div class="activity-text">EICR Certificate uploaded by landlord</div>
+              <div class="activity-time">28 Apr, 3:12pm</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-icon">&#128296;</div>
+            <div style="flex:1;">
+              <div class="activity-text">Maintenance request #08 — Kitchen tap — Resolved</div>
+              <div class="activity-time">22 Apr, 10:05am</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right features -->
+    <div class="phone-col-features right-col">
+      <div class="phone-feature">
+        <div class="phone-feature-label">Maintenance</div>
+        <div class="phone-feature-title">Report it in 60 seconds.</div>
+        <div class="phone-feature-desc">Photo, description, urgency level. Tracked from submission to resolution. No chasing required.</div>
+      </div>
+      <div class="phone-feature">
+        <div class="phone-feature-label">Transparency</div>
+        <div class="phone-feature-title">See what's happening.</div>
+        <div class="phone-feature-desc">Real-time updates on maintenance jobs, rent receipts, and property notices. No more radio silence.</div>
+      </div>
+      <div class="phone-feature">
+        <div class="phone-feature-label">Security</div>
+        <div class="phone-feature-title">Your deposit, protected.</div>
+        <div class="phone-feature-desc">Inventory at the start. Condition tracked throughout. No ambiguity at the end of tenancy.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-section">
+    <div class="stats-grid">
+      <div class="stat-cell">
+        <div class="stat-num">60s</div>
+        <div class="stat-label">Issue Reporting</div>
+        <div class="stat-desc">From noticing the problem to contractor notified.</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">0</div>
+        <div class="stat-label">Phone Calls Needed</div>
+        <div class="stat-desc">Everything handled in-app. Nothing lost in voicemail.</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">100%</div>
+        <div class="stat-label">Audit Trail</div>
+        <div class="stat-desc">Every message, payment, and request documented.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="page-footer">
+    <span class="footer-word">Aurelius</span>
+    <span class="footer-meta">Concept 04 — Tenant Experience · Dundee, Scotland</span>
+  </footer>
+
+</div>
+
+</body>
+</html>
