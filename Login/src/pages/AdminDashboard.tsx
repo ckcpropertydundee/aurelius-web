@@ -5242,11 +5242,23 @@ function AddComplianceModal({ property, onClose, onSaved, onFileUploaded }: {
             </div>
           )}
           <FormField label="Upload PDF / Document">
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 0', borderRadius: 8, border: '1px dashed rgba(255,255,255,0.2)', color: file ? '#4ade80' : '#60a5fa', fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
-              {file ? file.name : 'Choose file…'}
-              <input type="file" accept="application/pdf,image/*" onChange={e => setFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
-            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 0', borderRadius: 8, border: '1px dashed rgba(255,255,255,0.2)', color: file ? '#4ade80' : '#60a5fa', fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
+                {file ? file.name : 'Choose file…'}
+                <input type="file" accept="application/pdf,image/*" onChange={e => setFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
+              </label>
+              {file && (
+                <button
+                  type="button"
+                  onClick={() => { const url = URL.createObjectURL(file); window.open(url, '_blank') }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 8, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.25)', color: '#60a5fa', fontSize: 12, cursor: 'pointer' }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                  Preview file
+                </button>
+              )}
+            </div>
           </FormField>
           <FormField label="Notes (optional)">
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any additional notes…" rows={2}
