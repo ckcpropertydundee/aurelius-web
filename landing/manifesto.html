@@ -107,11 +107,23 @@
     border-color: rgba(255,255,255,0.6);
   }
 
-  /* ── HERO ── */
-  .hero {
-    padding: 112px 64px 80px;
+  /* ── SPLIT LAYOUT ── */
+  .split-layout {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    align-items: start;
     background: var(--off-white);
-    max-width: 900px;
+    padding-top: 56px;
+  }
+
+  .split-left {
+    position: sticky;
+    top: 56px;
+    padding: 80px 48px 80px 64px;
+    min-height: calc(100vh - 56px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .hero-eyebrow {
@@ -125,50 +137,59 @@
 
   .hero-h1 {
     font-family: var(--font-serif);
-    font-size: clamp(36px, 5.5vw, 66px);
+    font-size: clamp(32px, 3.6vw, 58px);
     font-weight: 400;
     color: var(--navy);
     line-height: 1.1;
   }
 
   /* ── GRIEVANCE SECTIONS ── */
-  .sections {
-    background: var(--off-white);
-    padding: 0 64px;
+  .split-right {
+    border-left: 0.5px solid var(--subtle);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .section {
-    max-width: 680px;
-    padding: 60px 0;
-    border-top: 0.5px solid var(--subtle);
+    padding: 40px 40px;
+    border-bottom: 0.5px solid var(--subtle);
+  }
+
+  .section:nth-child(even) {
+    border-left: 0.5px solid var(--subtle);
+  }
+
+  .section:nth-child(3),
+  .section:nth-child(4) {
+    border-bottom: none;
   }
 
   .section-question {
     font-family: var(--font-serif);
-    font-size: clamp(17px, 2vw, 22px);
+    font-size: clamp(14px, 1.4vw, 17px);
     font-weight: 400;
     color: var(--navy);
     line-height: 1.45;
-    margin-bottom: 20px;
+    margin-bottom: 14px;
   }
 
   .section-question::before { content: '\201C'; }
   .section-question::after  { content: '\201D'; }
 
   .section-body {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 300;
     color: var(--slate);
-    line-height: 1.75;
-    margin-bottom: 32px;
+    line-height: 1.7;
+    margin-bottom: 20px;
   }
 
   .section-response {
     border-top: 0.5px solid var(--navy-deep);
-    padding-top: 14px;
-    font-size: 10px;
+    padding-top: 12px;
+    font-size: 9px;
     font-weight: 300;
-    letter-spacing: 3px;
+    letter-spacing: 2.5px;
     text-transform: uppercase;
     color: var(--navy-deep);
   }
@@ -203,7 +224,7 @@
   /* ── COMPARISON TABLE ── */
   .comparison {
     background: var(--navy);
-    padding: 0 64px 96px;
+    padding: 72px 64px 96px;
     border-top: 0.5px solid var(--navy-deep);
   }
 
@@ -239,9 +260,10 @@
   }
 
   .comparison-old {
-    font-size: 14px;
-    font-weight: 300;
-    color: var(--slate);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--off-white);
     line-height: 1.5;
   }
 
@@ -334,21 +356,39 @@
     .nav-links { display: none; }
     .nav-login { padding: 7px 12px; }
 
-    .hero { padding: 88px 24px 60px; }
+    .split-layout {
+      grid-template-columns: 1fr;
+      padding-top: 56px;
+    }
 
-    .sections { padding: 0 24px; }
+    .split-left {
+      position: static;
+      min-height: auto;
+      padding: 60px 24px 40px;
+    }
+
+    .split-right {
+      border-left: none;
+      grid-template-columns: 1fr;
+    }
+
+    .section {
+      padding: 40px 24px;
+      border-bottom: 0.5px solid var(--subtle);
+    }
+
+    .section:nth-child(even) { border-left: none; }
+
+    .section:nth-child(3) { border-bottom: 0.5px solid var(--subtle); }
+
+    .section:nth-child(4) { border-bottom: none; }
 
     .statement { padding: 64px 24px; }
-    .comparison { padding: 0 24px 64px; }
+    .comparison { padding: 48px 24px 64px; }
 
     .comparison-row { gap: 20px; }
 
-    .footer-cta {
-      flex-direction: column;
-      align-items: flex-start;
-      padding: 56px 24px;
-      gap: 32px;
-    }
+    .footer-cta { padding: 56px 24px; }
 
     .floor-bar {
       flex-direction: column;
@@ -376,39 +416,43 @@
   </div>
 </nav>
 
-<!-- HERO -->
-<div class="hero">
-  <div class="hero-eyebrow">Concept 05 &middot; The Anti-Letting Agency Manifesto</div>
-  <h1 class="hero-h1">The letting agency<br>model is broken.<br>We built something<br>better.</h1>
-</div>
+<!-- SPLIT LAYOUT: title left, sections right -->
+<div class="split-layout">
 
-<!-- GRIEVANCE SECTIONS -->
-<div class="sections">
-
-  <div class="section">
-    <div class="section-question">It&rsquo;s the 14th. Can I get my rents that came in on the 1st?</div>
-    <p class="section-body">You&rsquo;ve been waiting two weeks to see money that&rsquo;s already sitting in your agent&rsquo;s client account. It&rsquo;s not a banking delay. It&rsquo;s their process. They send statements when they feel like it. Batch payments when it suits them, not a service. You&rsquo;re not a client. You&rsquo;re a line on a spreadsheet.</p>
-    <div class="section-response">Aurelius: Rent visible in real time. Not when someone gets around to it.</div>
+  <!-- LEFT: sticky title -->
+  <div class="split-left">
+    <div class="hero-eyebrow">The Anti-Letting Agency Manifesto</div>
+    <h1 class="hero-h1">The letting agency<br>model is broken.<br>We built something<br>better.</h1>
   </div>
 
-  <div class="section">
-    <div class="section-question">Why are you paying 12% for spreadsheets and phone calls?</div>
-    <p class="section-body">Management fees of 10&ndash;15% made sense when agents had physical offices, paper filing systems, and no internet. Today they use WhatsApp to contact tenants and email to send you a PDF. The infrastructure cost is near zero. The fee is the same. Someone is benefiting from that gap. It isn&rsquo;t you.</p>
-    <div class="section-response">Aurelius replaces the process. Not just the paperwork.</div>
-  </div>
+  <!-- RIGHT: grievance sections -->
+  <div class="split-right">
 
-  <div class="section">
-    <div class="section-question">Why are you spending over the agreed contractual sum limit?</div>
-    <p class="section-body">Your management agreement almost certainly has a spend limit &mdash; usually &pound;100 to &pound;250 &mdash; above which authorisation is required. Invoices routinely exceed it without a call. They forgot. They were busy. The contractor quoted more on the day. You find out when the statement arrives. This is not an edge case. This is standard practice.</p>
-    <div class="section-response">Every Aurelius invoice is checked against your agreed cap. Automatically.</div>
-  </div>
+    <div class="section">
+      <div class="section-question">It&rsquo;s the 14th. Can I get my rents that came in on the 1st?</div>
+      <p class="section-body">You&rsquo;ve been waiting two weeks to see money that&rsquo;s already sitting in your agent&rsquo;s client account. It&rsquo;s not a banking delay. It&rsquo;s their process. They send statements when they feel like it. Batch payments when it suits them, not a service. You&rsquo;re not a client. You&rsquo;re a line on a spreadsheet.</p>
+      <div class="section-response">Aurelius: Rent visible in real time. Not when someone gets around to it.</div>
+    </div>
 
-  <div class="section">
-    <div class="section-question">Who actually spoke to my tenant about the repair?</div>
-    <p class="section-body">No one can tell you. There&rsquo;s no record. A note in someone&rsquo;s phone, a WhatsApp message on a personal device, a verbal conversation in a corridor. Your property, your legal liability &mdash; managed on personal communication tools with zero audit trail. And when something goes wrong, that absence of documentation is your problem, not theirs.</p>
-    <div class="section-response">Aurelius: Every communication logged. Every action item trackable.</div>
-  </div>
+    <div class="section">
+      <div class="section-question">Why are you paying 12% for spreadsheets and phone calls?</div>
+      <p class="section-body">Management fees of 10&ndash;15% made sense when agents had physical offices, paper filing systems, and no internet. Today they use WhatsApp to contact tenants and email to send you a PDF. The infrastructure cost is near zero. The fee is the same. Someone is benefiting from that gap. It isn&rsquo;t you.</p>
+      <div class="section-response">Aurelius replaces the process. Not just the paperwork.</div>
+    </div>
 
+    <div class="section">
+      <div class="section-question">Why are you spending over the agreed contractual sum limit?</div>
+      <p class="section-body">Your management agreement almost certainly has a spend limit &mdash; usually &pound;100 to &pound;250 &mdash; above which authorisation is required. Invoices routinely exceed it without a call. They forgot. They were busy. The contractor quoted more on the day. You find out when the statement arrives. This is not an edge case. This is standard practice.</p>
+      <div class="section-response">Every Aurelius invoice is checked against your agreed cap. Automatically.</div>
+    </div>
+
+    <div class="section">
+      <div class="section-question">Who actually spoke to my tenant about the repair?</div>
+      <p class="section-body">No one can tell you. There&rsquo;s no record. A note in someone&rsquo;s phone, a WhatsApp message on a personal device, a verbal conversation in a corridor. Your property, your legal liability &mdash; managed on personal communication tools with zero audit trail. And when something goes wrong, that absence of documentation is your problem, not theirs.</p>
+      <div class="section-response">Aurelius: Every communication logged. Every action item trackable.</div>
+    </div>
+
+  </div>
 </div>
 
 <!-- MANIFESTO STATEMENT -->
@@ -449,15 +493,13 @@
 <div class="footer-cta">
   <div class="footer-cta-left">
     <div class="footer-tagline">Property management, done properly.</div>
-    <div class="footer-meta">Built by Aurelius &middot; Dundee, Scotland &middot; Launching 2026</div>
   </div>
-  <a href="#" class="btn-waitlist">Join the Waitlist</a>
 </div>
 
 <!-- FLOOR BAR -->
 <div class="floor-bar">
   <span class="floor-wordmark">Aurelius</span>
-  <span class="floor-meta">Concept 05 &mdash; The Manifesto &middot; Property management, done properly.</span>
+  <span class="floor-meta">The Manifesto &middot; Property management, done properly.</span>
 </div>
 
 </body>
