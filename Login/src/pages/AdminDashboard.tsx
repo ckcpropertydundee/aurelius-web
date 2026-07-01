@@ -39,7 +39,7 @@ type PropStatus = 'active' | 'vacant' | 'viewings' | 'empty'
 interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; profiles: { full_name: string | null; email: string } | null }
 interface ComplianceItem { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; status: string | null; document_url: string | null; notes: string | null }
 interface PropertyTenancyInfo { id: string; tenant_id: string; tenant_name: string | null; tenant_email: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null }
-interface AuditEvent { id: string; ts: string; cat: 'maintenance' | 'payment' | 'tenancy' | 'compliance'; title: string; detail?: string; ok?: boolean; documentUrl?: string }
+interface AuditEvent { id: string; ts: string; cat: 'maintenance' | 'payment' | 'tenancy' | 'compliance' | 'viewing'; title: string; detail?: string; ok?: boolean; documentUrl?: string }
 interface PropertyKey { id: string; property_id: string; key_type: 'master' | 'tenant' | 'contractor'; holder_name: string | null; holder_role: string | null; checked_out_at: string | null; notes: string | null }
 interface KeyEvent { id: string; property_id: string; key_type: string; action: 'checked_out' | 'returned'; person_name: string | null; notes: string | null; created_at: string }
 type MeterType = 'gas' | 'electricity'
@@ -512,16 +512,19 @@ export default function AdminDashboard() {
       type CompRow = { id: string; type: string; created_at: string; document_url: string | null }
       type HistRow = { id: string; maintenance_request_id: string; old_status: string | null; new_status: string | null; notes: string | null; created_at: string }
       type PayRow = { id: string; tenancy_id: string; amount: number; status: string | null; paid_at: string | null; created_at: string; failure_reason: string | null }
+      type ViewRow = { id: string; name: string; preferred_date: string; preferred_time: string; status: string; created_at: string }
 
-      const [maintRes, tenancyRes, compRes] = await Promise.all([
+      const [maintRes, tenancyRes, compRes, viewRes] = await Promise.all([
         supabase.from('maintenance_requests').select('id, title, created_at').eq('property_id', propId).order('created_at', { ascending: false }),
         supabase.from('tenancies').select('id, start_date, end_date, is_current, monthly_rent').eq('property_id', propId).order('created_at', { ascending: false }),
         supabase.from('compliance_items').select('id, type, created_at, document_url').eq('property_id', propId).order('created_at', { ascending: false }),
+        supabase.from('viewing_requests').select('id, name, preferred_date, preferred_time, status, created_at').eq('property_id', propId).order('created_at', { ascending: false }),
       ])
 
       const maints = (maintRes.data ?? []) as MaintRow[]
       const tenancies = (tenancyRes.data ?? []) as TenancyRow[]
       const compls = (compRes.data ?? []) as CompRow[]
+      const viewings = (viewRes.data ?? []) as ViewRow[]
       const maintIds = maints.map(m => m.id)
       const tenancyIds = tenancies.map(t => t.id)
 
@@ -565,6 +568,12 @@ export default function AdminDashboard() {
 
       for (const c of compls) {
         events.push({ id: `c-${c.id}`, ts: c.created_at, cat: 'compliance', title: `${c.type} added`, documentUrl: c.document_url ?? undefined })
+      }
+
+      for (const v of viewings) {
+        const dateStr = v.preferred_date ? fmtDate(v.preferred_date) : '—'
+        const statusNote = v.status !== 'pending' ? ` (${v.status})` : ''
+        events.push({ id: `v-${v.id}`, ts: v.created_at, cat: 'viewing', title: `Viewing requested${statusNote}`, detail: `${v.name} — ${dateStr}${v.preferred_time ? ` at ${v.preferred_time}` : ''}` })
       }
 
       events.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
@@ -2687,7 +2696,7 @@ export default function AdminDashboard() {
             ) : (
               <div>
                 {auditEvents.map((evt, i) => {
-                  const dotColor = ({ maintenance: '#fbbf24', payment: '#4ade80', tenancy: '#60a5fa', compliance: '#a78bfa' } as Record<string, string>)[evt.cat] ?? '#8899aa'
+                  const dotColor = ({ maintenance: '#fbbf24', payment: '#4ade80', tenancy: '#60a5fa', compliance: '#a78bfa', viewing: '#f97316' } as Record<string, string>)[evt.cat] ?? '#8899aa'
                   const isLast = i === auditEvents.length - 1
                   return (
                     <div key={evt.id} style={{ display: 'flex', gap: 12 }}>
