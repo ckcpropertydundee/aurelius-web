@@ -38,8 +38,8 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 0.5px solid var(--navy-deep);
-    padding: 0 32px;
-    height: 56px;
+    padding: 0 clamp(16px, 2.5vw, 32px);
+    height: 70px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -47,8 +47,8 @@
 
   .nav-wordmark {
     font-family: var(--font-serif);
-    font-size: 13px;
-    letter-spacing: 14px;
+    font-size: clamp(11px, 1vw, 13px);
+    letter-spacing: clamp(5px, 0.6vw, 9px);
     color: var(--white);
     text-transform: uppercase;
     text-decoration: none;
@@ -57,20 +57,23 @@
   .nav-right {
     display: flex;
     align-items: center;
+    flex: 1;
     gap: 8px;
   }
 
   .nav-links {
     display: flex;
-    gap: 0;
+    flex: 1;
+    justify-content: space-evenly;
     list-style: none;
+    gap: 0;
   }
 
   .nav-links a {
     display: block;
-    padding: 8px 14px;
-    font-size: 10px;
-    letter-spacing: 2px;
+    padding: 8px 6px;
+    font-size: clamp(7.5px, 1vw, 11px);
+    letter-spacing: clamp(0.5px, 0.15vw, 2px);
     text-transform: uppercase;
     color: rgba(255,255,255,0.5);
     text-decoration: none;
@@ -88,9 +91,9 @@
   .nav-login {
     display: inline-flex;
     align-items: center;
-    padding: 7px 16px;
-    font-size: 10px;
-    letter-spacing: 2px;
+    padding: clamp(4px, 0.5vw, 7px) clamp(8px, 1.2vw, 16px);
+    font-size: clamp(7.5px, 0.75vw, 10px);
+    letter-spacing: clamp(0.5px, 0.15vw, 2px);
     text-transform: uppercase;
     color: var(--white);
     text-decoration: none;
@@ -100,6 +103,7 @@
     white-space: nowrap;
     cursor: pointer;
     font-weight: 300;
+    flex-shrink: 0;
   }
 
   .nav-login:hover {
@@ -113,14 +117,14 @@
     grid-template-columns: 5fr 7fr;
     align-items: start;
     background: var(--off-white);
-    padding-top: 56px;
+    padding-top: 70px;
   }
 
   .split-left {
     position: sticky;
-    top: 56px;
+    top: 70px;
     padding: 80px 48px 80px 64px;
-    min-height: calc(100vh - 56px);
+    min-height: calc(100vh - 70px);
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -280,13 +284,11 @@
     background: var(--off-white);
     padding: 80px 64px;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    gap: 48px;
     border-top: 0.5px solid var(--subtle);
+    text-align: center;
   }
-
-  .footer-cta-left {}
 
   .footer-tagline {
     font-family: var(--font-serif);
@@ -352,19 +354,19 @@
 
   /* ── RESPONSIVE ── */
   @media (max-width: 900px) {
-    .site-nav { padding: 0 20px; }
-    .nav-links { display: none; }
-    .nav-login { padding: 7px 12px; }
+    .site-nav { gap: 4px; }
+    .nav-links a { padding: 5px 4px; }
 
     .split-layout {
       grid-template-columns: 1fr;
-      padding-top: 56px;
+      padding-top: 70px;
     }
 
     .split-left {
       position: static;
       min-height: auto;
       padding: 60px 24px 40px;
+      text-align: center;
     }
 
     .split-right {
@@ -412,7 +414,7 @@
       <li><a href="index.html">Tenant Experience</a></li>
       <li><a href="manifesto.html" class="active">The Manifesto</a></li>
     </ul>
-    <a href="https://aurelius-web-nine.vercel.app" class="nav-login">Log in</a>
+    <a href="https://aureliuspropertymanagement.co.uk/login" class="nav-login">Log in</a>
   </div>
 </nav>
 
@@ -491,9 +493,7 @@
 
 <!-- FOOTER CTA -->
 <div class="footer-cta">
-  <div class="footer-cta-left">
-    <div class="footer-tagline">Property management, done properly.</div>
-  </div>
+  <div class="footer-tagline">Property management, done properly.</div>
 </div>
 
 <!-- FLOOR BAR -->

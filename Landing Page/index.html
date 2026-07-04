@@ -39,8 +39,8 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 0.5px solid rgba(255,255,255,0.08);
-    padding: 0 clamp(16px, 2.5vw, 32px);
-    height: 70px;
+    padding: 0 32px;
+    height: 56px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -48,25 +48,23 @@
 
   .nav-wordmark {
     font-family: var(--font-serif);
-    font-size: clamp(11px, 1vw, 13px);
-    letter-spacing: clamp(5px, 0.6vw, 9px);
+    font-size: 13px;
+    letter-spacing: 14px;
     color: var(--white);
     text-transform: uppercase;
   }
 
   .nav-links {
     display: flex;
-    flex: 1;
-    justify-content: space-evenly;
-    list-style: none;
     gap: 0;
+    list-style: none;
   }
 
   .nav-links a {
     display: block;
-    padding: 8px 6px;
-    font-size: clamp(7.5px, 1vw, 11px);
-    letter-spacing: clamp(0.5px, 0.15vw, 2px);
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(255,255,255,0.5);
     text-decoration: none;
@@ -83,16 +81,15 @@
   .nav-right {
     display: flex;
     align-items: center;
-    flex: 1;
     gap: 8px;
   }
 
   .nav-login {
     display: inline-flex;
     align-items: center;
-    padding: clamp(4px, 0.5vw, 7px) clamp(8px, 1.2vw, 16px);
-    font-size: clamp(7.5px, 0.75vw, 10px);
-    letter-spacing: clamp(0.5px, 0.15vw, 2px);
+    padding: 7px 16px;
+    font-size: 10px;
+    letter-spacing: 2px;
     text-transform: uppercase;
     color: var(--white);
     text-decoration: none;
@@ -101,7 +98,6 @@
     transition: background 0.2s, border-color 0.2s;
     white-space: nowrap;
     cursor: pointer;
-    flex-shrink: 0;
   }
 
   .nav-login:hover {
@@ -112,7 +108,7 @@
   /* PAGE WRAPPER */
   .page {
     min-height: 100vh;
-    padding-top: 70px;
+    padding-top: 56px;
     background: var(--off-white);
     color: var(--navy);
   }
@@ -439,8 +435,9 @@
 
   /* RESPONSIVE */
   @media (max-width: 900px) {
-    .site-nav { gap: 4px; }
-    .nav-links a { padding: 5px 4px; }
+    .site-nav { padding: 0 20px; }
+    .nav-links { display: none; }
+    .nav-login { padding: 7px 12px; }
 
     .p4-hero { padding: 60px 24px 40px; }
 
@@ -492,7 +489,7 @@
   <div class="nav-wordmark">Aurelius</div>
   <div class="nav-right">
     <ul class="nav-links">
-      <li><a href="https://aureliuspropertymanagement.co.uk/control-panel.html">The Control Panel</a></li>
+      <li><a href="#">The Control Panel</a></li>
       <li><a href="#">Automation Engine</a></li>
       <li><a href="#">Investor Lens</a></li>
       <li><a href="#" class="active">Tenant Experience</a></li>
@@ -630,7 +627,7 @@
   <!-- FOOTER -->
   <footer class="page-footer">
     <span class="footer-word">Aurelius</span>
-    <span class="footer-meta">Tenant Experience · Dundee, Scotland</span>
+    <span class="footer-meta">Concept 04 — Tenant Experience · Dundee, Scotland</span>
   </footer>
 
 </div>

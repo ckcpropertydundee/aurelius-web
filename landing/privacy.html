@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurelius — Privacy Policy</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy:      #0D1B3E;
+    --navy-deep: #162B5B;
+    --slate:     #4A5878;
+    --cool-grey: #C8C5BE;
+    --subtle:    #E8E6E1;
+    --off-white: #F7F6F3;
+    --white:     #FFFFFF;
+    --font-serif: Georgia, 'Times New Roman', serif;
+    --font-sans:  'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    font-weight: 300;
+    background: var(--off-white);
+    color: var(--navy);
+    overflow-x: hidden;
+  }
+
+  /* ── NAV ── */
+  .site-nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 1000;
+    background: rgba(13,27,62,0.97);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 0.5px solid var(--navy-deep);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-wordmark {
+    font-family: var(--font-serif);
+    font-size: 13px;
+    letter-spacing: 14px;
+    color: var(--white);
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 0;
+    list-style: none;
+  }
+
+  .nav-links a {
+    display: block;
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    transition: color 0.2s;
+    white-space: nowrap;
+    font-weight: 300;
+  }
+
+  .nav-links a:hover { color: var(--white); }
+  .nav-links a.active {
+    color: var(--white);
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+  }
+
+  .nav-login {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 16px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--white);
+    text-decoration: none;
+    border: 0.5px solid rgba(255,255,255,0.35);
+    background: transparent;
+    transition: background 0.2s, border-color 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+    font-weight: 300;
+  }
+
+  .nav-login:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.6);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    background: var(--navy);
+    padding: 96px 64px 80px;
+    margin-top: 56px;
+  }
+
+  .hero-inner {
+    max-width: 760px;
+  }
+
+  .hero-eyebrow {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 24px;
+  }
+
+  .hero-h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(28px, 3.2vw, 48px);
+    font-weight: 400;
+    color: var(--off-white);
+    line-height: 1.15;
+    margin-bottom: 24px;
+  }
+
+  .hero-meta {
+    font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 1.5px;
+    color: var(--slate);
+  }
+
+  /* ── LAYOUT ── */
+  .doc-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    align-items: start;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 0 96px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    position: sticky;
+    top: 56px;
+    padding: 56px 40px 56px 64px;
+    border-right: 0.5px solid var(--subtle);
+  }
+
+  .toc-label {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 20px;
+  }
+
+  .toc-list {
+    list-style: none;
+  }
+
+  .toc-list li {
+    margin-bottom: 0;
+  }
+
+  .toc-list a {
+    display: block;
+    padding: 7px 0;
+    font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    color: var(--slate);
+    text-decoration: none;
+    border-bottom: 0.5px solid var(--subtle);
+    transition: color 0.2s;
+    line-height: 1.4;
+  }
+
+  .toc-list a:hover { color: var(--navy); }
+
+  /* ── DOCUMENT BODY ── */
+  .doc-body {
+    padding: 56px 64px 56px 56px;
+  }
+
+  .doc-section {
+    margin-bottom: 56px;
+    padding-bottom: 56px;
+    border-bottom: 0.5px solid var(--subtle);
+  }
+
+  .doc-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .section-number {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-family: var(--font-serif);
+    font-size: clamp(18px, 1.8vw, 24px);
+    font-weight: 400;
+    color: var(--navy);
+    line-height: 1.3;
+    margin-bottom: 24px;
+  }
+
+  .doc-p {
+    font-size: 13.5px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.75;
+    margin-bottom: 16px;
+  }
+
+  .doc-p:last-child { margin-bottom: 0; }
+
+  /* ── ROLE BLOCKS ── */
+  .role-block {
+    margin: 24px 0;
+    border-left: 2px solid var(--navy-deep);
+    padding-left: 20px;
+  }
+
+  .role-label {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--navy);
+    margin-bottom: 12px;
+  }
+
+  .data-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .data-list li {
+    font-size: 13px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.65;
+    padding: 5px 0;
+    border-bottom: 0.5px solid var(--subtle);
+    display: flex;
+    gap: 10px;
+  }
+
+  .data-list li:last-child { border-bottom: none; }
+
+  .data-list li::before {
+    content: '—';
+    color: var(--cool-grey);
+    flex-shrink: 0;
+  }
+
+  /* ── BASIS TABLE ── */
+  .basis-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+  }
+
+  .basis-table th {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    text-align: left;
+    padding: 0 16px 10px 0;
+    border-bottom: 0.5px solid var(--navy-deep);
+  }
+
+  .basis-table td {
+    font-size: 12.5px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.6;
+    padding: 12px 16px 12px 0;
+    border-bottom: 0.5px solid var(--subtle);
+    vertical-align: top;
+  }
+
+  .basis-table td:first-child {
+    color: var(--navy);
+    font-weight: 400;
+    white-space: nowrap;
+    padding-right: 24px;
+  }
+
+  /* ── PROCESSOR CARD ── */
+  .processor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--subtle);
+    border: 0.5px solid var(--subtle);
+    margin: 20px 0;
+  }
+
+  .processor-card {
+    background: var(--off-white);
+    padding: 20px 24px;
+  }
+
+  .processor-name {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+
+  .processor-role {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+    margin-bottom: 12px;
+  }
+
+  .processor-detail {
+    font-size: 12px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.6;
+  }
+
+  /* ── RIGHTS LIST ── */
+  .rights-list {
+    list-style: none;
+    margin: 20px 0 0;
+  }
+
+  .rights-list li {
+    padding: 14px 0;
+    border-bottom: 0.5px solid var(--subtle);
+    display: flex;
+    gap: 16px;
+    align-items: baseline;
+  }
+
+  .rights-list li:last-child { border-bottom: none; }
+
+  .right-name {
+    font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--navy);
+    flex-shrink: 0;
+    min-width: 160px;
+  }
+
+  .right-desc {
+    font-size: 12.5px;
+    font-weight: 300;
+    color: var(--slate);
+    line-height: 1.6;
+  }
+
+  /* ── HIGHLIGHT BOX ── */
+  .highlight-box {
+    background: var(--navy);
+    padding: 24px 28px;
+    margin: 20px 0;
+  }
+
+  .highlight-box p {
+    font-size: 13px;
+    font-weight: 300;
+    color: var(--off-white);
+    line-height: 1.7;
+  }
+
+  .highlight-box strong {
+    font-weight: 400;
+    color: var(--white);
+  }
+
+  /* ── FOOTER CTA ── */
+  .footer-cta {
+    background: var(--off-white);
+    padding: 80px 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 48px;
+    border-top: 0.5px solid var(--subtle);
+  }
+
+  .footer-tagline {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--navy);
+    margin-bottom: 10px;
+  }
+
+  .footer-meta {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cool-grey);
+  }
+
+  /* ── FLOOR BAR ── */
+  .floor-bar {
+    background: var(--navy);
+    padding: 24px 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 0.5px solid var(--navy-deep);
+  }
+
+  .floor-wordmark {
+    font-family: var(--font-serif);
+    font-size: 11px;
+    letter-spacing: 10px;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+
+  .floor-links {
+    display: flex;
+    gap: 24px;
+    list-style: none;
+  }
+
+  .floor-links a {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 1.5px;
+    color: var(--slate);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .floor-links a:hover { color: var(--cool-grey); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .site-nav { padding: 0 20px; }
+    .nav-links { display: none; }
+
+    .hero { padding: 72px 24px 56px; }
+
+    .doc-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .toc {
+      position: static;
+      padding: 32px 24px;
+      border-right: none;
+      border-bottom: 0.5px solid var(--subtle);
+    }
+
+    .doc-body { padding: 40px 24px; }
+
+    .processor-grid { grid-template-columns: 1fr; }
+
+    .rights-list li { flex-direction: column; gap: 6px; }
+
+    .right-name { min-width: auto; }
+
+    .footer-cta {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 56px 24px;
+      gap: 32px;
+    }
+
+    .floor-bar {
+      flex-direction: column;
+      gap: 16px;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .floor-links { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="site-nav">
+  <a href="index.html" class="nav-wordmark">Aurelius</a>
+  <div class="nav-right">
+    <ul class="nav-links">
+      <li><a href="index.html">Tenant Experience</a></li>
+      <li><a href="manifesto.html">The Manifesto</a></li>
+      <li><a href="privacy.html" class="active">Privacy Policy</a></li>
+    </ul>
+    <a href="https://aureliuspropertymanagement.co.uk" class="nav-login">Log in</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Legal &amp; Data</div>
+    <h1 class="hero-h1">Privacy Policy</h1>
+    <div class="hero-meta">Effective date: 3 June 2026 &nbsp;&middot;&nbsp; Aurelius Property Management &nbsp;&middot;&nbsp; Dundee, Scotland</div>
+  </div>
+</div>
+
+<!-- DOCUMENT -->
+<div class="doc-layout">
+
+  <!-- TOC -->
+  <aside class="toc">
+    <div class="toc-label">Contents</div>
+    <ol class="toc-list">
+      <li><a href="#who-we-are">1. Who we are</a></li>
+      <li><a href="#what-this-covers">2. What this policy covers</a></li>
+      <li><a href="#data-collected">3. Data we collect</a></li>
+      <li><a href="#how-we-use">4. How we use your data</a></li>
+      <li><a href="#legal-bases">5. Legal bases</a></li>
+      <li><a href="#processors">6. Third-party processors</a></li>
+      <li><a href="#retention">7. Retention</a></li>
+      <li><a href="#international">8. International transfers</a></li>
+      <li><a href="#cookies">9. Cookies &amp; local storage</a></li>
+      <li><a href="#your-rights">10. Your rights</a></li>
+      <li><a href="#contact">11. Contact &amp; complaints</a></li>
+    </ol>
+  </aside>
+
+  <!-- BODY -->
+  <main class="doc-body">
+
+    <!-- 1 -->
+    <section class="doc-section" id="who-we-are">
+      <div class="section-number">Section 01</div>
+      <h2 class="section-title">Who we are</h2>
+      <p class="doc-p">Aurelius Property Management (&ldquo;Aurelius&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a property management platform based in Dundee, Scotland. We are the Data Controller for personal data processed through our web application and, when launched, our iOS application.</p>
+      <p class="doc-p">Contact for data matters: <strong>ckcpropertydundee@gmail.com</strong></p>
+      <p class="doc-p">This policy is written to comply with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018.</p>
+    </section>
+
+    <!-- 2 -->
+    <section class="doc-section" id="what-this-covers">
+      <div class="section-number">Section 02</div>
+      <h2 class="section-title">What this policy covers</h2>
+      <p class="doc-p">This policy applies to all personal data we process in connection with the Aurelius platform, including:</p>
+      <ul class="data-list" style="margin-top:12px;">
+        <li>Use of the Aurelius web application at aurelius-web-nine.vercel.app</li>
+        <li>Use of the Aurelius iOS application (when available)</li>
+        <li>Communications you send to us by email or through the platform</li>
+        <li>Payment and tenancy transactions processed on your behalf</li>
+      </ul>
+      <p class="doc-p" style="margin-top:16px;">It covers three categories of user: <strong>landlords</strong>, <strong>tenants</strong>, and <strong>contractors</strong>. Where data handling differs materially between landlords and tenants, we describe each separately.</p>
+    </section>
+
+    <!-- 3 -->
+    <section class="doc-section" id="data-collected">
+      <div class="section-number">Section 03</div>
+      <h2 class="section-title">Data we collect</h2>
+
+      <div class="role-block">
+        <div class="role-label">Landlords</div>
+        <ul class="data-list">
+          <li><strong>Account:</strong> full name, email address, hashed password (managed by Supabase Auth)</li>
+          <li><strong>Portfolio:</strong> property addresses, rental values, tenancy terms, property descriptions</li>
+          <li><strong>Financial &mdash; Stripe Connect:</strong> to receive rent payments you onboard a Stripe Express account. Aurelius does not store raw bank account details; these are held by Stripe under their own privacy policy. We store your Stripe account ID, onboarding status, and payout enablement flags.</li>
+          <li><strong>Management fee:</strong> your agreed management fee percentage, stored in your landlord profile</li>
+          <li><strong>Payment history:</strong> rent payment records, management fee deductions, payout records, and associated Stripe payment intent IDs</li>
+          <li><strong>Session &amp; device:</strong> IP address, browser type, login timestamps, session tokens</li>
+        </ul>
+      </div>
+
+      <div class="role-block">
+        <div class="role-label">Tenants</div>
+        <ul class="data-list">
+          <li><strong>Account:</strong> full name, email address, hashed password (managed by Supabase Auth)</li>
+          <li><strong>Contact:</strong> phone number (if provided)</li>
+          <li><strong>Tenancy:</strong> property address, tenancy start and end dates, monthly rent amount, rent due date, tenancy status</li>
+          <li><strong>Payment method:</strong> card payment methods are tokenised and stored by Stripe. We store your Stripe customer ID and a reference to your default payment method; we never see or store raw card numbers or CVVs.</li>
+          <li><strong>Payment history:</strong> rent payment records, payment status, dates, amounts</li>
+          <li><strong>Session &amp; device:</strong> IP address, browser type, login timestamps, session tokens</li>
+        </ul>
+      </div>
+
+      <div class="role-block">
+        <div class="role-label">Contractors</div>
+        <ul class="data-list">
+          <li><strong>Account:</strong> full name, email address, hashed password</li>
+          <li><strong>Business:</strong> company name, trade type, contact details</li>
+          <li><strong>Job records:</strong> assigned work orders, completion status, communications logged within the platform</li>
+        </ul>
+      </div>
+
+      <p class="doc-p" style="margin-top:20px;">We do not collect special category data (as defined in UK GDPR Article 9) unless you voluntarily provide it. Please do not submit health, immigration status, or other sensitive data through the platform.</p>
+    </section>
+
+    <!-- 4 -->
+    <section class="doc-section" id="how-we-use">
+      <div class="section-number">Section 04</div>
+      <h2 class="section-title">How we use your data</h2>
+
+      <table class="basis-table">
+        <thead>
+          <tr>
+            <th>Purpose</th>
+            <th>What it involves</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Providing the platform</td>
+            <td>Creating and managing your account, linking tenancies to properties, enabling dashboard access appropriate to your role</td>
+          </tr>
+          <tr>
+            <td>Rent collection</td>
+            <td>Processing payments from tenants via Stripe, deducting the agreed management fee, and transferring the balance to the landlord&rsquo;s Stripe Connect account</td>
+          </tr>
+          <tr>
+            <td>Financial records</td>
+            <td>Maintaining payment history, generating statements, and retaining records required by UK tax law</td>
+          </tr>
+          <tr>
+            <td>Communication</td>
+            <td>Sending transactional notifications: payment confirmations, payment failures, onboarding steps, platform updates</td>
+          </tr>
+          <tr>
+            <td>Security &amp; fraud prevention</td>
+            <td>Detecting and preventing unauthorised access, monitoring for suspicious activity, enforcing role-based access controls</td>
+          </tr>
+          <tr>
+            <td>Platform improvement</td>
+            <td>Analysing aggregate usage to improve product features and fix issues. We do not sell your data or build advertising profiles.</td>
+          </tr>
+          <tr>
+            <td>Legal compliance</td>
+            <td>Responding to lawful requests from regulators or courts, and complying with our obligations under UK law</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5 -->
+    <section class="doc-section" id="legal-bases">
+      <div class="section-number">Section 05</div>
+      <h2 class="section-title">Legal bases for processing</h2>
+      <p class="doc-p">Under UK GDPR Article 6, we rely on the following legal bases:</p>
+      <ul class="rights-list">
+        <li>
+          <span class="right-name">Contract</span>
+          <span class="right-desc">Processing is necessary to provide the service you have contracted for &mdash; account creation, tenancy management, and rent collection. This is the primary basis for most processing of landlord and tenant data.</span>
+        </li>
+        <li>
+          <span class="right-name">Legal Obligation</span>
+          <span class="right-desc">We must retain financial records for a minimum of six years under UK tax and company law. We may also need to process data to comply with requests from HMRC or other authorities.</span>
+        </li>
+        <li>
+          <span class="right-name">Legitimate Interests</span>
+          <span class="right-desc">Fraud detection, platform security, and service improvement, where these interests are not overridden by your rights. We conduct a balancing test before relying on this basis.</span>
+        </li>
+        <li>
+          <span class="right-name">Consent</span>
+          <span class="right-desc">For any optional marketing communications. You may withdraw consent at any time without affecting other processing.</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- 6 -->
+    <section class="doc-section" id="processors">
+      <div class="section-number">Section 06</div>
+      <h2 class="section-title">Third-party processors</h2>
+      <p class="doc-p">We engage the following processors under written Data Processing Agreements. They act only on our instructions and may not use your data for their own purposes.</p>
+
+      <div class="processor-grid">
+        <div class="processor-card">
+          <div class="processor-name">Supabase</div>
+          <div class="processor-role">Database &middot; Authentication &middot; Storage</div>
+          <p class="processor-detail">Our platform database, authentication service, and file storage run on Supabase infrastructure hosted in <strong>eu-west-1 (Ireland)</strong> &mdash; within the EEA, which has UK adequacy status. Supabase processes your account data, tenancy records, and payment references on our behalf.</p>
+        </div>
+        <div class="processor-card">
+          <div class="processor-name">Stripe</div>
+          <div class="processor-role">Payment Processing &middot; Connect Accounts</div>
+          <p class="processor-detail">Stripe Payments Europe, Ltd processes all payment card data and manages landlord Express Connect accounts. Stripe is a regulated payment institution. We do not receive or store raw card or bank account numbers &mdash; only Stripe-issued references and status fields.</p>
+        </div>
+        <div class="processor-card">
+          <div class="processor-name">Vercel</div>
+          <div class="processor-role">Web Hosting &middot; Edge Network</div>
+          <p class="processor-detail">Our web application is hosted on Vercel&rsquo;s global edge network. Vercel may process request-level data (IP addresses, request headers) as part of serving the application and providing DDoS protection. Standard Contractual Clauses are in place for any transfers outside the UK/EEA.</p>
+        </div>
+        <div class="processor-card">
+          <div class="processor-name">Apple (future)</div>
+          <div class="processor-role">iOS App Distribution</div>
+          <p class="processor-detail">When the iOS application launches, it will be distributed via the Apple App Store. Apple processes data required for app installation and in-app purchase flows under Apple&rsquo;s own privacy policy. Aurelius will update this section when the iOS app is live.</p>
+        </div>
+      </div>
+
+      <p class="doc-p">We do not sell your personal data to any third party. We do not use your data for behavioural advertising.</p>
+    </section>
+
+    <!-- 7 -->
+    <section class="doc-section" id="retention">
+      <div class="section-number">Section 07</div>
+      <h2 class="section-title">Data retention</h2>
+      <table class="basis-table">
+        <thead>
+          <tr>
+            <th>Data type</th>
+            <th>Retention period</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Active account data</td>
+            <td>Duration of account</td>
+            <td>Contract performance</td>
+          </tr>
+          <tr>
+            <td>Payment &amp; financial records</td>
+            <td>7 years from transaction date</td>
+            <td>UK tax law (HMRC requirement)</td>
+          </tr>
+          <tr>
+            <td>Account data after deletion request</td>
+            <td>30 days, then permanently deleted</td>
+            <td>Grace period for accidental deletion</td>
+          </tr>
+          <tr>
+            <td>Session &amp; security logs</td>
+            <td>90 days</td>
+            <td>Fraud investigation &amp; security</td>
+          </tr>
+          <tr>
+            <td>Tenancy records post-tenancy</td>
+            <td>3 years from tenancy end</td>
+            <td>Legitimate interest; dispute resolution</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="doc-p" style="margin-top:16px;">After the applicable retention period, data is deleted or irreversibly anonymised. You may request earlier deletion under your right to erasure (Section 10), subject to the overriding financial record requirements above.</p>
+    </section>
+
+    <!-- 8 -->
+    <section class="doc-section" id="international">
+      <div class="section-number">Section 08</div>
+      <h2 class="section-title">International transfers</h2>
+      <p class="doc-p">Our primary data storage is in Ireland (eu-west-1), which falls within the EEA. The UK has granted adequacy status to the EEA, meaning transfers between the UK and Ireland do not require additional safeguards.</p>
+      <p class="doc-p">Vercel operates a global edge network that may route requests through servers outside the UK and EEA. Vercel has implemented Standard Contractual Clauses (SCCs) for such transfers. For data that never leaves Supabase&rsquo;s eu-west-1 region (account data, tenancy records, payment references), no international transfer occurs.</p>
+      <p class="doc-p">Stripe Payments Europe, Ltd is an Irish-incorporated entity. Card processing may involve Stripe&rsquo;s global infrastructure, which is covered by Stripe&rsquo;s own transfer mechanisms and binding corporate rules.</p>
+    </section>
+
+    <!-- 9 -->
+    <section class="doc-section" id="cookies">
+      <div class="section-number">Section 09</div>
+      <h2 class="section-title">Cookies &amp; local storage</h2>
+      <p class="doc-p">Aurelius does not use third-party advertising or tracking cookies. Our use of browser storage is limited to what is necessary to operate the platform:</p>
+      <ul class="data-list" style="margin-top:12px;">
+        <li><strong>Session storage (localStorage):</strong> Supabase JS stores your authentication session token in localStorage to keep you logged in between page loads. This token is used solely to authenticate requests to our backend. It is cleared when you log out.</li>
+        <li><strong>Stripe.js:</strong> Stripe&rsquo;s client-side library may set cookies for fraud detection purposes (e.g. device fingerprinting for card authentication). This is a requirement of secure card processing under PSD2. See Stripe&rsquo;s cookie policy for details.</li>
+      </ul>
+      <p class="doc-p" style="margin-top:16px;">We do not use Google Analytics, Meta Pixel, or any behavioural tracking tools. If this changes, we will update this policy and, where required, request your consent.</p>
+    </section>
+
+    <!-- 10 -->
+    <section class="doc-section" id="your-rights">
+      <div class="section-number">Section 10</div>
+      <h2 class="section-title">Your rights</h2>
+      <p class="doc-p">Under UK GDPR, you have the following rights in relation to your personal data. To exercise any of them, email us at <strong>ckcpropertydundee@gmail.com</strong>. We will respond within one calendar month.</p>
+      <ul class="rights-list">
+        <li>
+          <span class="right-name">Right of Access</span>
+          <span class="right-desc">You can request a copy of all personal data we hold about you, along with information about how it is processed (a &ldquo;Subject Access Request&rdquo;).</span>
+        </li>
+        <li>
+          <span class="right-name">Right to Rectification</span>
+          <span class="right-desc">If your data is inaccurate or incomplete, you can ask us to correct it. Much account data can be updated directly in your platform settings.</span>
+        </li>
+        <li>
+          <span class="right-name">Right to Erasure</span>
+          <span class="right-desc">You can ask us to delete your personal data. We will comply unless we have a legal obligation to retain it (e.g. financial records required by HMRC).</span>
+        </li>
+        <li>
+          <span class="right-name">Right to Restriction</span>
+          <span class="right-desc">You can ask us to restrict processing of your data in certain circumstances &mdash; for example, while a dispute about accuracy is resolved.</span>
+        </li>
+        <li>
+          <span class="right-name">Right to Portability</span>
+          <span class="right-desc">Where processing is based on contract or consent and carried out by automated means, you can request your data in a structured, machine-readable format.</span>
+        </li>
+        <li>
+          <span class="right-name">Right to Object</span>
+          <span class="right-desc">You can object to processing based on legitimate interests. We will stop unless we can demonstrate compelling legitimate grounds that override your interests.</span>
+        </li>
+        <li>
+          <span class="right-name">Automated Decisions</span>
+          <span class="right-desc">We do not make solely automated decisions that produce legal or similarly significant effects. Role assignment, access control, and rent calculations involve human oversight.</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- 11 -->
+    <section class="doc-section" id="contact">
+      <div class="section-number">Section 11</div>
+      <h2 class="section-title">Contact &amp; complaints</h2>
+      <p class="doc-p">For any data privacy question, request, or concern, contact us directly:</p>
+
+      <div class="highlight-box">
+        <p><strong>Aurelius Property Management</strong><br>Dundee, Scotland<br>Email: <strong>ckcpropertydundee@gmail.com</strong></p>
+      </div>
+
+      <p class="doc-p">We will acknowledge your request within 72 hours and respond in full within one calendar month. If the matter is complex we may extend this by a further two months, in which case we will notify you of the extension and the reason for it.</p>
+      <p class="doc-p">If you are not satisfied with our response, you have the right to lodge a complaint with the UK supervisory authority:</p>
+
+      <div class="highlight-box" style="margin-top:16px;">
+        <p><strong>Information Commissioner&rsquo;s Office (ICO)</strong><br>Wycliffe House, Water Lane, Wilmslow, Cheshire SK9 5AF<br>Telephone: 0303 123 1113<br>Website: <strong>ico.org.uk</strong></p>
+      </div>
+
+      <p class="doc-p" style="margin-top:20px;">We reserve the right to update this policy as the platform evolves or as legal requirements change. We will notify active users of material changes by email at least 14 days before they take effect. The effective date at the top of this page will always reflect the current version.</p>
+    </section>
+
+  </main>
+</div>
+
+<!-- FOOTER CTA -->
+<div class="footer-cta">
+  <div>
+    <div class="footer-tagline">Property management, done properly.</div>
+    <div class="footer-meta">Built by Aurelius &middot; Dundee, Scotland &middot; Launching 2026</div>
+  </div>
+  <a href="https://aureliuspropertymanagement.co.uk" class="nav-login">Log in</a>
+</div>
+
+<!-- FLOOR BAR -->
+<div class="floor-bar">
+  <span class="floor-wordmark">Aurelius</span>
+  <ul class="floor-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="manifesto.html">Manifesto</a></li>
+    <li><a href="privacy.html">Privacy Policy</a></li>
+  </ul>
+</div>
+
+</body>
+</html>
