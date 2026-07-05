@@ -5,12 +5,13 @@ import { initials, gbp, fmtDate, fmtDateTime, docUrl, timeAgo } from '../lib/uti
 import DashShell from '../components/DashShell'
 import EmptyState from '../components/EmptyState'
 import SettingsPage from './SettingsPage'
-import { IconChart, IconPeople, IconHouse, IconGear, IconStaff, IconWrench, IconSterling, IconActivity } from '../components/icons'
+import { IconChart, IconPeople, IconHouse, IconGear, IconStaff, IconWrench, IconSterling, IconActivity, IconCalendar } from '../components/icons'
 
-function buildTabs(pendingViewings: number) {
+function buildTabs(pendingViewings: number, todayViewings: number) {
   return [
     { id: 'analytics',   label: 'Dashboard',   icon: <IconChart />,    badge: pendingViewings > 0 ? pendingViewings : undefined },
     { id: 'rent',        label: 'Rent',         icon: <IconSterling /> },
+    { id: 'diary',       label: 'Diary',        icon: <IconCalendar />, badge: todayViewings > 0 ? todayViewings : undefined },
     { id: 'users',       label: 'Users',        icon: <IconPeople /> },
     { id: 'staff',       label: 'Staff',        icon: <IconStaff /> },
     { id: 'properties',  label: 'Properties',   icon: <IconHouse /> },
@@ -199,6 +200,7 @@ export default function AdminDashboard() {
   const [preCheckSaving, setPreCheckSaving] = useState(false)
   const [smokeSaving, setSmokeSaving] = useState(false)
   const [gasToggleSaving, setGasToggleSaving] = useState(false)
+  const [diaryWeekOffset, setDiaryWeekOffset] = useState(0)
   const [deletePropertyId, setDeletePropertyId] = useState<string | null>(null)
   const [deletePropertyAddress, setDeletePropertyAddress] = useState('')
   const [deletingProperty, setDeletingProperty] = useState(false)
@@ -1263,7 +1265,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <DashShell tabs={buildTabs(viewingRequests.filter(r => r.status === 'pending').length)} active={tab} onChange={setTab} metrics={metrics} userInitials={userInitials}>
+    <DashShell tabs={buildTabs(viewingRequests.filter(r => r.status === 'pending').length, viewingRequests.filter(r => r.status !== 'cancelled' && r.preferred_date === new Date().toISOString().slice(0, 10)).length)} active={tab} onChange={setTab} metrics={metrics} userInitials={userInitials}>
 
       {quickError && (
         <div style={{ margin: '12px 16px 0', padding: '10px 14px', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -1586,6 +1588,144 @@ export default function AdminDashboard() {
           }}
         />
       )}
+
+      {/* ── DIARY ── */}
+      {tab === 'diary' && (() => {
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const weekStart = new Date()
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1 + diaryWeekOffset * 7)
+        weekStart.setHours(0, 0, 0, 0)
+        const days = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(weekStart)
+          d.setDate(weekStart.getDate() + i)
+          return d
+        })
+        const weekLabel = (() => {
+          const s = days[0]; const e = days[6]
+          const sMonth = s.toLocaleDateString('en-GB', { month: 'long' })
+          const eMonth = e.toLocaleDateString('en-GB', { month: 'long' })
+          const year = e.getFullYear()
+          return sMonth === eMonth ? `${sMonth} ${year}` : `${sMonth} – ${eMonth} ${year}`
+        })()
+        const viewingsByDate: Record<string, ViewingRequest[]> = {}
+        for (const req of viewingRequests) {
+          const d = req.preferred_date?.slice(0, 10)
+          if (d) { viewingsByDate[d] = [...(viewingsByDate[d] ?? []), req] }
+        }
+        return (
+          <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 4 }}>Diary</p>
+                <p style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#e8edf5', fontWeight: 300 }}>{weekLabel}</p>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {diaryWeekOffset !== 0 && (
+                  <button type="button" onClick={() => setDiaryWeekOffset(0)}
+                    style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
+                    Today
+                  </button>
+                )}
+                <button type="button" onClick={() => setDiaryWeekOffset(o => o - 1)}
+                  style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  ‹
+                </button>
+                <button type="button" onClick={() => setDiaryWeekOffset(o => o + 1)}
+                  style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  ›
+                </button>
+              </div>
+            </div>
+
+            {/* Days */}
+            {viewingRequestsLoading ? (
+              [...Array(3)].map((_, i) => <div key={i} style={{ height: 80, borderRadius: 10, background: 'rgba(255,255,255,0.04)', opacity: 0.5 }} className="animate-pulse" />)
+            ) : (
+              days.map(day => {
+                const iso = day.toISOString().slice(0, 10)
+                const isToday = iso === todayStr
+                const isPast = iso < todayStr
+                const dayViewings = (viewingsByDate[iso] ?? []).sort((a, b) => (a.preferred_time ?? '').localeCompare(b.preferred_time ?? ''))
+                const dayLabel = day.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+                return (
+                  <div key={iso}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: isToday ? '#60a5fa' : isPast ? '#4a5568' : '#8899aa', letterSpacing: '0.05em', flexShrink: 0 }}>
+                        {isToday ? `Today — ${day.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : dayLabel}
+                      </p>
+                      {isToday && <div style={{ height: 1, flex: 1, background: 'rgba(96,165,250,0.3)' }} />}
+                      {!isToday && <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.05)' }} />}
+                      {dayViewings.length > 0 && (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: isToday ? '#60a5fa' : '#8899aa', background: isToday ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 10, flexShrink: 0 }}>
+                          {dayViewings.length}
+                        </span>
+                      )}
+                    </div>
+                    {dayViewings.length === 0 ? (
+                      <p style={{ fontSize: 11, color: isPast ? '#2d3748' : 'rgba(136,153,170,0.4)', paddingLeft: 2, marginBottom: 4 }}>No viewings</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {dayViewings.map(req => {
+                          const addr = req.properties?.address ?? 'Unknown property'
+                          const timeFmt = req.preferred_time ? (() => { const [h, m] = req.preferred_time.split(':'); const hr = parseInt(h); return `${hr > 12 ? hr - 12 : hr || 12}:${m} ${hr >= 12 ? 'pm' : 'am'}` })() : ''
+                          const statusColor = req.status === 'confirmed' ? '#4ade80' : req.status === 'cancelled' ? '#f87171' : '#fbbf24'
+                          const statusBg   = req.status === 'confirmed' ? 'rgba(74,222,128,0.1)' : req.status === 'cancelled' ? 'rgba(248,113,113,0.08)' : 'rgba(251,191,36,0.1)'
+                          return (
+                            <div key={req.id} style={{ background: isPast ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)', border: `1px solid ${isToday ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 10, padding: '12px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: 13, color: isPast ? '#4a5568' : '#e8edf5', fontFamily: 'Georgia, serif', marginBottom: 2 }} className="truncate">{addr}</p>
+                                  <p style={{ fontSize: 12, color: isPast ? '#4a5568' : '#c8d4e0' }}>{req.name}</p>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                                  {timeFmt && <p style={{ fontSize: 13, fontWeight: 600, color: isPast ? '#4a5568' : '#e8edf5', fontFamily: 'Georgia, serif' }}>{timeFmt}</p>}
+                                  <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: statusBg, color: statusColor, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{req.status}</span>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: req.message ? 6 : 0 }}>
+                                <span style={{ fontSize: 10, color: '#8899aa' }}>✉ {req.email}</span>
+                                {req.phone && <span style={{ fontSize: 10, color: '#8899aa' }}>📞 {req.phone}</span>}
+                              </div>
+                              {req.message && <p style={{ fontSize: 11, color: '#8899aa', fontStyle: 'italic', borderLeft: '2px solid rgba(255,255,255,0.08)', paddingLeft: 8, marginTop: 6 }}>{req.message}</p>}
+                              {!isPast && (
+                                <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                                  {req.status === 'pending' && (
+                                    <>
+                                      <button type="button" onClick={() => updateViewingStatus(req.id, 'confirmed')}
+                                        style={{ flex: 1, padding: '6px 0', fontSize: 11, borderRadius: 6, background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)', cursor: 'pointer', fontWeight: 600 }}>
+                                        Confirm
+                                      </button>
+                                      <button type="button" onClick={() => updateViewingStatus(req.id, 'cancelled')}
+                                        style={{ flex: 1, padding: '6px 0', fontSize: 11, borderRadius: 6, background: 'rgba(248,113,113,0.08)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)', cursor: 'pointer', fontWeight: 600 }}>
+                                        Cancel
+                                      </button>
+                                    </>
+                                  )}
+                                  {req.status === 'confirmed' && (
+                                    <button type="button" onClick={() => updateViewingStatus(req.id, 'cancelled')}
+                                      style={{ padding: '6px 14px', fontSize: 11, borderRadius: 6, background: 'rgba(248,113,113,0.08)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)', cursor: 'pointer' }}>
+                                      Cancel
+                                    </button>
+                                  )}
+                                  <button type="button" onClick={() => deleteViewingRequest(req.id)}
+                                    style={{ padding: '6px 12px', fontSize: 11, borderRadius: 6, background: 'rgba(255,255,255,0.04)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}>
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── USERS ── */}
       {tab === 'users' && selectedUser && (
