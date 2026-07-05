@@ -592,7 +592,7 @@ export default function PropertiesForLetPage() {
                       <input type="text" required readOnly value={bookingDate} style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 1, height: 1 }} tabIndex={-1} />
                       {calOpen && (() => {
                         const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0)
-                        const maxDate = new Date(todayMidnight); maxDate.setMonth(maxDate.getMonth() + 3)
+                        const maxDate = new Date(todayMidnight); maxDate.setMonth(maxDate.getMonth() + 1)
                         const yr = calMonth.getFullYear(); const mo = calMonth.getMonth()
                         const days = buildCalDays(yr, mo)
                         const prevDisabled = new Date(yr, mo, 1) <= new Date(todayMidnight.getFullYear(), todayMidnight.getMonth(), 1)
