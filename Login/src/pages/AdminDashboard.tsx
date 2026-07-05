@@ -201,6 +201,7 @@ export default function AdminDashboard() {
   const [smokeSaving, setSmokeSaving] = useState(false)
   const [gasToggleSaving, setGasToggleSaving] = useState(false)
   const [diaryWeekOffset, setDiaryWeekOffset] = useState(0)
+  const [selectedDiaryDay, setSelectedDiaryDay] = useState<string | null>(null)
   const [showAddViewing, setShowAddViewing] = useState(false)
   const [newViewingPropId, setNewViewingPropId] = useState('')
   const [newViewingDate, setNewViewingDate] = useState('')
@@ -1784,9 +1785,16 @@ export default function AdminDashboard() {
                 const isPast = iso < todayStr
                 const dayViewings = (viewingsByDate[iso] ?? []).sort((a, b) => (a.preferred_time ?? '').localeCompare(b.preferred_time ?? ''))
                 const dayLabel = day.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+                const isDaySelected = selectedDiaryDay === iso
+                const dayTakenSlots = new Set(dayViewings.filter(r => r.status !== 'cancelled').map(r => r.preferred_time))
                 return (
                   <div key={iso}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <button type="button"
+                      onClick={() => {
+                        setSelectedDiaryDay(isDaySelected ? null : iso)
+                        if (showAddViewing) { setNewViewingDate(iso); setNewViewingTime('') }
+                      }}
+                      style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                       <p style={{ fontSize: 11, fontWeight: 600, color: isToday ? '#60a5fa' : isPast ? '#4a5568' : '#8899aa', letterSpacing: '0.05em', flexShrink: 0 }}>
                         {isToday ? `Today — ${day.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : dayLabel}
                       </p>
@@ -1797,7 +1805,29 @@ export default function AdminDashboard() {
                           {dayViewings.length}
                         </span>
                       )}
-                    </div>
+                      <span style={{ fontSize: 9, color: isDaySelected ? '#60a5fa' : '#4a5568', flexShrink: 0 }}>{isDaySelected ? '▲' : '▼'}</span>
+                    </button>
+
+                    {/* Availability grid for selected day */}
+                    {isDaySelected && (
+                      <div style={{ marginBottom: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '12px 12px 8px' }}>
+                        <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>
+                          Availability — {dayViewings.filter(r => r.status !== 'cancelled').length} booked · {DIARY_SLOTS.length - dayTakenSlots.size} free
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
+                          {DIARY_SLOTS.map(slot => {
+                            const bookedReq = dayViewings.find(r => r.preferred_time === slot && r.status !== 'cancelled')
+                            const isFree = !bookedReq
+                            return (
+                              <div key={slot} style={{ padding: '6px 8px', borderRadius: 6, background: isFree ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.07)', border: `1px solid ${isFree ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.2)'}` }}>
+                                <p style={{ fontSize: 10, color: isFree ? '#4ade80' : '#f87171', fontWeight: 600 }}>{slot}</p>
+                                {bookedReq && <p style={{ fontSize: 9, color: '#8899aa', marginTop: 1 }} className="truncate">{bookedReq.name}</p>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                     {dayViewings.length === 0 ? (
                       <p style={{ fontSize: 11, color: isPast ? '#2d3748' : 'rgba(136,153,170,0.4)', paddingLeft: 2, marginBottom: 4 }}>No viewings</p>
                     ) : (
