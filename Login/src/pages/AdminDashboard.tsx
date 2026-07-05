@@ -771,9 +771,47 @@ export default function AdminDashboard() {
     setViewingRequestsLoading(false)
   }
 
+  async function sendViewingEmail(type: 'confirmed' | 'received' | 'cancelled', req: ViewingRequest) {
+    if (!req.email) return
+    await supabase.functions.invoke('send-viewing-email', {
+      body: {
+        type,
+        viewing: {
+          name: req.name,
+          email: req.email,
+          address: req.properties?.address ?? '',
+          date: req.preferred_date,
+          time: req.preferred_time,
+        },
+      },
+    })
+  }
+
+  async function cancelFutureViewings(propertyId: string) {
+    const today = new Date().toISOString().slice(0, 10)
+    const toCancel = viewingRequests.filter(
+      r => r.property_id === propertyId &&
+      r.preferred_date >= today &&
+      (r.status === 'pending' || r.status === 'confirmed')
+    )
+    if (toCancel.length === 0) return
+    const ids = toCancel.map(r => r.id)
+    await supabase.from('viewing_requests').update({ status: 'cancelled' }).in('id', ids)
+    setViewingRequests(prev => prev.map(r => ids.includes(r.id) ? { ...r, status: 'cancelled' } : r))
+    for (const req of toCancel) {
+      sendViewingEmail('cancelled', req)
+    }
+  }
+
   async function updateViewingStatus(id: string, status: string) {
+    const req = viewingRequests.find(r => r.id === id)
     const { error } = await supabase.from('viewing_requests').update({ status }).eq('id', id)
-    if (!error) setViewingRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
+    if (!error) {
+      setViewingRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
+      if (req && (status === 'confirmed' || status === 'cancelled')) {
+        sendViewingEmail(status as 'confirmed' | 'cancelled', { ...req, status })
+      }
+    }
   }
 
   async function deleteViewingRequest(id: string) {
@@ -1033,6 +1071,7 @@ export default function AdminDashboard() {
       const updated = { ...selectedProperty, ...updates }
       setSelectedProperty(updated)
       setAdminProps(prev => prev.map(p => p.id === selectedProperty.id ? updated : p))
+      if (!newIsListed) cancelFutureViewings(selectedProperty.id)
     } catch {
       setListingError('Failed to update listing. Please try again.')
     } finally {
@@ -1056,6 +1095,7 @@ export default function AdminDashboard() {
     }
     setAdminProps(prev => prev.map(prop => prop.id === p.id ? { ...prop, is_listed: newIsListed } : prop))
     if (selectedProperty?.id === p.id) setSelectedProperty(prev => prev ? { ...prev, is_listed: newIsListed } : prev)
+    if (!newIsListed) cancelFutureViewings(p.id)
   }
 
   async function handleListingSave() {
@@ -1179,7 +1219,9 @@ export default function AdminDashboard() {
       status: 'confirmed',
     }).select('id, property_id, name, email, phone, preferred_date, preferred_time, message, status, created_at, properties(address)').single()
     if (!error && data) {
-      setViewingRequests(prev => [...prev, data as unknown as ViewingRequest].sort((a, b) => a.preferred_date.localeCompare(b.preferred_date)))
+      const inserted = data as unknown as ViewingRequest
+      setViewingRequests(prev => [...prev, inserted].sort((a, b) => a.preferred_date.localeCompare(b.preferred_date)))
+      if (inserted.email) sendViewingEmail('confirmed', inserted)
       setShowAddViewing(false)
       setNewViewingPropId(''); setNewViewingDate(''); setNewViewingTime('')
       setNewViewingName(''); setNewViewingEmail(''); setNewViewingPhone(''); setNewViewingMessage('')
@@ -3519,6 +3561,9 @@ export default function AdminDashboard() {
           landlords={landlordUsers}
           onClose={() => setEditProperty(null)}
           onSaved={(patch) => {
+            if (editProperty.status !== 'tenanted' && patch.status === 'tenanted') {
+              cancelFutureViewings(editProperty.id)
+            }
             setAdminProps(prev => prev.map(p => p.id === editProperty.id ? { ...p, ...patch } : p))
             setEditProperty(null)
           }}

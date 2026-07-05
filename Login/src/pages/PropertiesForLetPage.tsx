@@ -111,6 +111,18 @@ export default function PropertiesForLetPage() {
       setBookingState('error')
     } else {
       setBookingState('success')
+      supabase.functions.invoke('send-viewing-email', {
+        body: {
+          type: 'received',
+          viewing: {
+            name: bookingName.trim(),
+            email: bookingEmail.trim().toLowerCase(),
+            address: selected.address,
+            date: bookingDate,
+            time: bookingTime,
+          },
+        },
+      })
     }
   }
 
