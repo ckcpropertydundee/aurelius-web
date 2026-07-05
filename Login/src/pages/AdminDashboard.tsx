@@ -201,6 +201,15 @@ export default function AdminDashboard() {
   const [smokeSaving, setSmokeSaving] = useState(false)
   const [gasToggleSaving, setGasToggleSaving] = useState(false)
   const [diaryWeekOffset, setDiaryWeekOffset] = useState(0)
+  const [showAddViewing, setShowAddViewing] = useState(false)
+  const [newViewingPropId, setNewViewingPropId] = useState('')
+  const [newViewingDate, setNewViewingDate] = useState('')
+  const [newViewingTime, setNewViewingTime] = useState('')
+  const [newViewingName, setNewViewingName] = useState('')
+  const [newViewingEmail, setNewViewingEmail] = useState('')
+  const [newViewingPhone, setNewViewingPhone] = useState('')
+  const [newViewingMessage, setNewViewingMessage] = useState('')
+  const [newViewingSaving, setNewViewingSaving] = useState(false)
   const [deletePropertyId, setDeletePropertyId] = useState<string | null>(null)
   const [deletePropertyAddress, setDeletePropertyAddress] = useState('')
   const [deletingProperty, setDeletingProperty] = useState(false)
@@ -1155,6 +1164,28 @@ export default function AdminDashboard() {
     if (data) { setSelectedProperty(data as unknown as AdminPropRow); setTab('properties') }
   }
 
+  async function submitManualViewing() {
+    if (!newViewingPropId || !newViewingDate || !newViewingTime || !newViewingName.trim()) return
+    setNewViewingSaving(true)
+    const { data, error } = await supabase.from('viewing_requests').insert({
+      property_id: newViewingPropId,
+      name: newViewingName.trim(),
+      email: newViewingEmail.trim().toLowerCase() || '',
+      phone: newViewingPhone.trim() || null,
+      preferred_date: newViewingDate,
+      preferred_time: newViewingTime,
+      message: newViewingMessage.trim() || null,
+      status: 'confirmed',
+    }).select('id, property_id, name, email, phone, preferred_date, preferred_time, message, status, created_at, properties(address)').single()
+    if (!error && data) {
+      setViewingRequests(prev => [...prev, data as unknown as ViewingRequest].sort((a, b) => a.preferred_date.localeCompare(b.preferred_date)))
+      setShowAddViewing(false)
+      setNewViewingPropId(''); setNewViewingDate(''); setNewViewingTime('')
+      setNewViewingName(''); setNewViewingEmail(''); setNewViewingPhone(''); setNewViewingMessage('')
+    }
+    setNewViewingSaving(false)
+  }
+
   async function navigateToRentProperty(propertyId: string) {
     const cached = adminProps.find(p => p.id === propertyId)
     if (cached) { setSelectedProperty(cached); return }
@@ -1591,6 +1622,11 @@ export default function AdminDashboard() {
 
       {/* ── DIARY ── */}
       {tab === 'diary' && (() => {
+        const DIARY_SLOTS = [
+          '9:00 am','9:30 am','10:00 am','10:30 am','11:00 am','11:30 am',
+          '12:00 pm','12:30 pm','1:00 pm','1:30 pm','2:00 pm','2:30 pm',
+          '3:00 pm','3:30 pm','4:00 pm','4:30 pm','5:00 pm',
+        ]
         const todayStr = new Date().toISOString().slice(0, 10)
         const weekStart = new Date()
         weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1 + diaryWeekOffset * 7)
@@ -1612,6 +1648,9 @@ export default function AdminDashboard() {
           const d = req.preferred_date?.slice(0, 10)
           if (d) { viewingsByDate[d] = [...(viewingsByDate[d] ?? []), req] }
         }
+        const takenSlots = newViewingDate
+          ? new Set(viewingRequests.filter(r => r.preferred_date?.slice(0,10) === newViewingDate && r.status !== 'cancelled').map(r => r.preferred_time))
+          : new Set<string>()
         return (
           <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Header */}
@@ -1621,6 +1660,11 @@ export default function AdminDashboard() {
                 <p style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#e8edf5', fontWeight: 300 }}>{weekLabel}</p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button"
+                  onClick={() => { if (!adminPropsLoaded && !adminPropsLoading) loadAdminProps(); setShowAddViewing(o => !o) }}
+                  style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: showAddViewing ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.06)', color: showAddViewing ? '#4ade80' : '#8899aa', border: `1px solid ${showAddViewing ? 'rgba(74,222,128,0.25)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer' }}>
+                  {showAddViewing ? '✕ Cancel' : '+ Add Viewing'}
+                </button>
                 {diaryWeekOffset !== 0 && (
                   <button type="button" onClick={() => setDiaryWeekOffset(0)}
                     style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
@@ -1637,6 +1681,98 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </div>
+
+            {/* Add Viewing Form */}
+            {showAddViewing && (
+              <div style={{ ...CARD, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>New Viewing</p>
+
+                {/* Property */}
+                <div>
+                  <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Property *</p>
+                  {adminPropsLoading ? (
+                    <p style={{ fontSize: 12, color: '#8899aa' }}>Loading properties…</p>
+                  ) : (
+                    <select value={newViewingPropId} onChange={e => setNewViewingPropId(e.target.value)}
+                      style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: newViewingPropId ? '#e8edf5' : '#8899aa', fontSize: 13, outline: 'none' }}>
+                      <option value="">Select property…</option>
+                      {[...adminProps].sort((a,b) => a.address.localeCompare(b.address)).map(p => (
+                        <option key={p.id} value={p.id}>{p.address}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Name + Phone */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Name *</p>
+                    <input value={newViewingName} onChange={e => setNewViewingName(e.target.value)} placeholder="Full name"
+                      style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Phone</p>
+                    <input value={newViewingPhone} onChange={e => setNewViewingPhone(e.target.value)} placeholder="Optional"
+                      style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Email</p>
+                  <input type="email" value={newViewingEmail} onChange={e => setNewViewingEmail(e.target.value)} placeholder="Optional"
+                    style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+
+                {/* Date */}
+                <div>
+                  <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Date *</p>
+                  <input type="date" value={newViewingDate} min={todayStr} onChange={e => { setNewViewingDate(e.target.value); setNewViewingTime('') }}
+                    style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }} />
+                </div>
+
+                {/* Time slots */}
+                <div>
+                  <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    Time *{newViewingDate && takenSlots.size > 0 && <span style={{ color: '#fbbf24', marginLeft: 6 }}>— {takenSlots.size} slot{takenSlots.size !== 1 ? 's' : ''} taken</span>}
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                    {DIARY_SLOTS.map(slot => {
+                      const isTaken = takenSlots.has(slot)
+                      const isSelected = newViewingTime === slot
+                      return (
+                        <button key={slot} type="button" disabled={isTaken}
+                          onClick={() => setNewViewingTime(slot)}
+                          style={{
+                            padding: '8px 4px', borderRadius: 6, fontSize: 11, cursor: isTaken ? 'default' : 'pointer',
+                            background: isSelected ? 'rgba(74,222,128,0.15)' : isTaken ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${isSelected ? 'rgba(74,222,128,0.4)' : isTaken ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)'}`,
+                            color: isSelected ? '#4ade80' : isTaken ? '#2d3748' : '#8899aa',
+                            position: 'relative',
+                          }}>
+                          {slot}
+                          {isTaken && <span style={{ display: 'block', fontSize: 8, color: '#f87171', letterSpacing: '0.05em', marginTop: 2 }}>Taken</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Notes</p>
+                  <textarea value={newViewingMessage} onChange={e => setNewViewingMessage(e.target.value)} placeholder="Optional notes" rows={2}
+                    style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
+
+                <button type="button"
+                  disabled={newViewingSaving || !newViewingPropId || !newViewingDate || !newViewingTime || !newViewingName.trim()}
+                  onClick={submitManualViewing}
+                  style={{ padding: '10px 0', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: (!newViewingPropId || !newViewingDate || !newViewingTime || !newViewingName.trim() || newViewingSaving) ? 'default' : 'pointer', background: (!newViewingPropId || !newViewingDate || !newViewingTime || !newViewingName.trim()) ? 'rgba(255,255,255,0.04)' : 'rgba(74,222,128,0.12)', color: (!newViewingPropId || !newViewingDate || !newViewingTime || !newViewingName.trim()) ? '#4a5568' : '#4ade80', border: `1px solid ${(!newViewingPropId || !newViewingDate || !newViewingTime || !newViewingName.trim()) ? 'rgba(255,255,255,0.06)' : 'rgba(74,222,128,0.3)'}` }}>
+                  {newViewingSaving ? 'Saving…' : 'Add to Diary'}
+                </button>
+              </div>
+            )}
 
             {/* Days */}
             {viewingRequestsLoading ? (
@@ -1668,7 +1804,7 @@ export default function AdminDashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {dayViewings.map(req => {
                           const addr = req.properties?.address ?? 'Unknown property'
-                          const timeFmt = req.preferred_time ? (() => { const [h, m] = req.preferred_time.split(':'); const hr = parseInt(h); return `${hr > 12 ? hr - 12 : hr || 12}:${m} ${hr >= 12 ? 'pm' : 'am'}` })() : ''
+                          const timeFmt = req.preferred_time ?? ''
                           const statusColor = req.status === 'confirmed' ? '#4ade80' : req.status === 'cancelled' ? '#f87171' : '#fbbf24'
                           const statusBg   = req.status === 'confirmed' ? 'rgba(74,222,128,0.1)' : req.status === 'cancelled' ? 'rgba(248,113,113,0.08)' : 'rgba(251,191,36,0.1)'
                           return (
