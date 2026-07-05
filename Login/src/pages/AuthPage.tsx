@@ -19,6 +19,7 @@ export default function AuthPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
+  const [companyName, setCompanyName] = useState('')
   const [role, setRole] = useState<Role>('landlord')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +38,7 @@ export default function AuthPage() {
         await signIn(email.trim(), password)
       } else if (mode === 'signup') {
         if (!fullName.trim()) { setError('Please enter your name.'); setIsLoading(false); return }
-        await signUp(email.trim(), password, fullName.trim(), role)
+        await signUp(email.trim(), password, fullName.trim(), role, role === 'landlord' ? companyName : undefined)
       } else {
         await sendPasswordReset(email.trim())
         setResetSent(true)
@@ -136,6 +137,10 @@ export default function AuthPage() {
                     ))}
                   </div>
                 </div>
+              )}
+
+              {mode === 'signup' && role === 'landlord' && (
+                <AuthField label="Company name (optional)" type="text" value={companyName} onChange={setCompanyName} placeholder="e.g. CKC Property Ltd." />
               )}
 
               {error && (

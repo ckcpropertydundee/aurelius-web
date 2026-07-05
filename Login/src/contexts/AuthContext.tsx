@@ -6,7 +6,7 @@ interface AuthContextType {
   user: AppUser | null
   isLoading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, fullName: string, role: string) => Promise<void>
+  signUp: (email: string, password: string, fullName: string, role: string, companyName?: string) => Promise<void>
   signOut: () => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
   updateProfile: (fullName: string) => Promise<void>
@@ -27,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       id: session.user.id,
       email: session.user.email ?? '',
       full_name: meta.full_name ?? null,
+      company_name: meta.company_name ?? null,
       role: meta.role as AppUser['role'],
       status: 'active',
     }
@@ -114,11 +115,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }
 
-  async function signUp(email: string, password: string, fullName: string, role: string) {
+  async function signUp(email: string, password: string, fullName: string, role: string, companyName?: string) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: toTitleCase(fullName), role } },
+      options: {
+        data: {
+          full_name: toTitleCase(fullName),
+          role,
+          ...(companyName?.trim() ? { company_name: toTitleCase(companyName) } : {}),
+        },
+      },
     })
     if (error) throw error
   }
