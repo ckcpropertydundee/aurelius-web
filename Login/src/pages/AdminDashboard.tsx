@@ -1770,7 +1770,7 @@ export default function AdminDashboard() {
                 {/* Date */}
                 <div>
                   <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Date *</p>
-                  <input type="date" value={newViewingDate} min={todayStr} onChange={e => { setNewViewingDate(e.target.value); setNewViewingTime('') }}
+                  <input type="date" lang="en-GB" value={newViewingDate} min={todayStr} onChange={e => { setNewViewingDate(e.target.value); setNewViewingTime('') }}
                     style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }} />
                 </div>
 
@@ -2467,7 +2467,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Due date</p>
-                  <input type="date" value={newJobDueDate} onChange={e => setNewJobDueDate(e.target.value)}
+                  <input type="date" lang="en-GB" value={newJobDueDate} onChange={e => setNewJobDueDate(e.target.value)}
                     style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 <div>
@@ -2501,7 +2501,7 @@ export default function AdminDashboard() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
                       <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 8 }}>Set the tenant move-out date, then choose a turnaround track:</p>
-                      <input type="date" value={workflowMoveOutDate} onChange={e => setWorkflowMoveOutDate(e.target.value)}
+                      <input type="date" lang="en-GB" value={workflowMoveOutDate} onChange={e => setWorkflowMoveOutDate(e.target.value)}
                         placeholder="Move-out date (defaults to today + 28)"
                         style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
                     </div>
@@ -3064,6 +3064,7 @@ export default function AdminDashboard() {
                           />
                           <input
                             type="date"
+                            lang="en-GB"
                             placeholder="Expiry date (optional)"
                             value={listingNewExpiry}
                             onChange={e => setListingNewExpiry(e.target.value)}
@@ -3111,6 +3112,7 @@ export default function AdminDashboard() {
                 <p style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 5 }}>Available From</p>
                 <input
                   type="date"
+                  lang="en-GB"
                   value={listingAvailableFrom}
                   onChange={e => setListingAvailableFrom(e.target.value)}
                   style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: listingAvailableFrom ? '#e8edf5' : '#8899aa', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }}
@@ -3685,7 +3687,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', display: 'block', marginBottom: 6 }}>Date Taken</label>
-                <input type="date" value={newMeterDate} onChange={(e) => setNewMeterDate(e.target.value)}
+                <input type="date" lang="en-GB" value={newMeterDate} onChange={(e) => setNewMeterDate(e.target.value)}
                   style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }} />
               </div>
               <div>
@@ -4056,7 +4058,7 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, admin
               <input type="number" value={amount} onChange={e => setAmount(e.target.value)} min="0" step="0.01" style={INPUT_STYLE} />
             </FormField>
             <FormField label="Date Paid *">
-              <input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} style={INPUT_STYLE} />
+              <input type="date" lang="en-GB" value={paidDate} onChange={e => setPaidDate(e.target.value)} style={INPUT_STYLE} />
             </FormField>
           </div>
           <FormField label="Notes">
@@ -4139,7 +4141,7 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
             </select>
           </FormField>
           <FormField label="Start Date *">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={INPUT_STYLE} />
+            <input type="date" lang="en-GB" value={startDate} onChange={e => setStartDate(e.target.value)} style={INPUT_STYLE} />
           </FormField>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <FormField label="Monthly Rent (£) *">
@@ -4241,7 +4243,7 @@ function AdminMaintenanceCard({ request, onClick }: { request: MaintenanceRow; o
             {request.priority} priority
           </span>
         )}
-        {request.created_at && <span style={{ fontSize: 10, color: '#8899aa', marginLeft: 'auto' }}>{request.created_at.slice(0, 10)}</span>}
+        {request.created_at && <span style={{ fontSize: 10, color: '#8899aa', marginLeft: 'auto' }}>{fmtDate(request.created_at)}</span>}
         {onClick && <svg width="12" height="12" viewBox="0 0 24 24" fill="#8899aa" style={{ marginLeft: 8, flexShrink: 0 }}><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>}
       </div>
     </div>
@@ -4804,6 +4806,7 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
                   <p style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 5 }}>Expiry Date <span style={{ color: '#8899aa', fontWeight: 400 }}>(renewal required every 3 years)</span></p>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={newExpiryDate}
                     onChange={e => setNewExpiryDate(e.target.value)}
                     style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }}
@@ -6084,7 +6087,7 @@ function AddPRTModal({ property, onClose, onSaved }: {
             <input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="Optional" style={INPUT_STYLE} />
           </FormField>
           <FormField label="Signing Date">
-            <input type="date" value={signingDate} onChange={e => setSigningDate(e.target.value)} style={INPUT_STYLE} />
+            <input type="date" lang="en-GB" value={signingDate} onChange={e => setSigningDate(e.target.value)} style={INPUT_STYLE} />
           </FormField>
           <FormField label="Upload PDF">
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 0', borderRadius: 8, border: '1px dashed rgba(255,255,255,0.2)', color: '#60a5fa', fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}>

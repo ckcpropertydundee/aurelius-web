@@ -888,7 +888,7 @@ function MaintenanceDetailSheet({ request, onClose }: { request: MaintenanceRequ
                         {entry.new_status && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#e8edf5', fontWeight: 500 }}>{maintenanceStatusText(entry.new_status)}</span>}
                       </div>
                       {entry.notes && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>{entry.notes}</p>}
-                      {entry.created_at && <p style={{ fontSize: 10, color: '#8899aa', opacity: 0.6, marginTop: 3 }}>{entry.created_at.slice(0, 16).replace('T', ' ')}</p>}
+                      {entry.created_at && <p style={{ fontSize: 10, color: '#8899aa', opacity: 0.6, marginTop: 3 }}>{fmtDateTime(entry.created_at)}</p>}
                     </div>
                   </div>
                 ))}
