@@ -119,8 +119,8 @@ export default function AdminDashboard() {
   const [monthlyRentRoll, setMonthlyRentRoll] = useState<number>(0)
   const [ytdGross, setYtdGross] = useState<number>(0)
   const [ytdNet, setYtdNet] = useState<number>(0)
-  const [rentCollection, setRentCollection] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; collected: number; isPaid: boolean; isVacant: boolean; paymentId: string | null; dueDate: string | null; paymentMethod: string | null; paymentNotes: string | null }[]>([])
-  const [markPaidItem, setMarkPaidItem] = useState<{ tenancyId: string; address: string; expected: number; paymentId: string | null; dueDate: string | null } | null>(null)
+  const [rentCollection, setRentCollection] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; collected: number; isPaid: boolean; isVacant: boolean; paymentId: string | null; dueDate: string | null; paymentMethod: string | null; paymentNotes: string | null; landlordEmail: string; landlordName: string }[]>([])
+  const [markPaidItem, setMarkPaidItem] = useState<{ tenancyId: string; address: string; expected: number; paymentId: string | null; dueDate: string | null; landlordEmail: string; landlordName: string } | null>(null)
   const [signals, setSignals] = useState<ImprovementSignal[]>([])
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('6M')
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
@@ -613,7 +613,7 @@ export default function AdminDashboard() {
       const ytdStart = `${now2.getFullYear()}-01-01`
 
       const [propsRes, tenanciesForCollRes, paymentsRes, allPaymentsRes, thisMonthPaysRes, maintRes] = await Promise.all([
-        supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price'),
+        supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, profiles(full_name, email)'),
         supabase.from('tenancies').select('id, property_id, monthly_rent').eq('is_current', true),
         supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr),
         supabase.from('payments').select('amount, due_date').gte('due_date', cutoffStr),
@@ -621,7 +621,7 @@ export default function AdminDashboard() {
         supabase.from('maintenance_requests').select('cost, created_at').not('cost', 'is', null).gte('created_at', cutoffStr),
       ])
 
-      const allProps = (propsRes.data ?? []) as { id: string; address: string; monthly_rent: number | null; is_active: boolean; status: string | null; purchase_price: number | null }[]
+      const allProps = (propsRes.data ?? []) as unknown as { id: string; address: string; monthly_rent: number | null; is_active: boolean; status: string | null; purchase_price: number | null; profiles: { full_name: string | null; email: string }[] | null }[]
       setPropertyCount(allProps.length)
 
       // Rent roll and tenanted count driven by property status (source of truth from the app)
@@ -646,8 +646,10 @@ export default function AdminDashboard() {
         .map(prop => {
           const tenancy = tenancyByPropId[prop.id]
           const isTenanted = !!tenancy && prop.status === 'tenanted'
+          const landlordEmail = prop.profiles?.[0]?.email ?? ''
+          const landlordName = prop.profiles?.[0]?.full_name ?? ''
           if (!isTenanted) {
-            return { tenancyId: tenancy?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null }
+            return { tenancyId: tenancy?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName }
           }
           const payment = thisMonthPays.find(p => p.tenancy_id === tenancy.id)
           return {
@@ -662,6 +664,8 @@ export default function AdminDashboard() {
             dueDate: payment?.due_date ?? null,
             paymentMethod: payment?.payment_method ?? null,
             paymentNotes: payment?.notes ?? null,
+            landlordEmail,
+            landlordName,
           }
         })
       setRentCollection(collectionItems)
@@ -1622,7 +1626,7 @@ export default function AdminDashboard() {
                               </div>
                               {!row.isPaid && (
                                 <button type="button"
-                                  onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate })}
+                                  onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate, landlordEmail: row.landlordEmail, landlordName: row.landlordName })}
                                   style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                   Mark Paid
                                 </button>
@@ -1649,6 +1653,8 @@ export default function AdminDashboard() {
           expected={markPaidItem.expected}
           paymentId={markPaidItem.paymentId}
           dueDate={markPaidItem.dueDate}
+          landlordEmail={markPaidItem.landlordEmail}
+          landlordName={markPaidItem.landlordName}
           adminId={user?.id ?? ''}
           adminRole={user?.role ?? 'admin'}
           onClose={() => setMarkPaidItem(null)}
@@ -3967,12 +3973,14 @@ function AddPropertyModal({ landlords, onClose, onSaved }: {
 
 const PAYMENT_METHODS = ['Bank Transfer', 'Standing Order', 'Cash', 'Cheque', 'Other']
 
-function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, adminId, adminRole, onClose, onSaved }: {
+function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landlordEmail, landlordName, adminId, adminRole, onClose, onSaved }: {
   tenancyId: string
   address: string
   expected: number
   paymentId: string | null
   dueDate: string | null
+  landlordEmail: string
+  landlordName: string
   adminId: string
   adminRole: string
   onClose: () => void
@@ -4034,6 +4042,20 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, admin
         due_date: defaultDueDate,
       },
     })
+
+    // Fire-and-forget — email failure should never block the UI
+    if (landlordEmail) {
+      supabase.functions.invoke('send-rent-paid-email', {
+        body: {
+          landlordEmail,
+          landlordName,
+          propertyAddress: address,
+          amount: parseFloat(amount),
+          paidDate,
+          paymentMethod: method,
+        },
+      }).catch(() => { /* non-critical */ })
+    }
 
     setSaving(false)
     onSaved(tenancyId, finalPaymentId!, method, notes)
