@@ -14,6 +14,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+const toTitleCase = (s: string) => s.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -31,20 +33,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function fetchProfile(userId: string): Promise<AppUser | null> {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .select('id, email, full_name, role, status')
       .eq('id', userId.toLowerCase())
       .limit(1)
       .single()
-    return (data as AppUser | null) ?? null
+    if (error) {
+      console.error('[AuthContext] fetchProfile failed:', error.code, error.message)
+      return null
+    }
+    const profile = data as AppUser
+    if (profile?.status === 'suspended') {
+      await supabase.auth.signOut()
+      return null
+    }
+    return profile
   }
 
   useEffect(() => {
     let active = true
 
+    // Enrich profile from DB in the background — never blocks the caller
+    function enrichInBackground(userId: string) {
+      fetchProfile(userId).then((full) => {
+        if (active && full) setUser(full)
+        if (active) setIsLoading(false)
+      }).catch(() => {
+        if (active) setIsLoading(false)
+      })
+    }
+
     // Read session from local storage immediately (no network call)
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return
       if (session) {
         const quick = profileFromSession(session)
@@ -52,29 +73,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Dismiss splash immediately — metadata has everything we need
           setUser(quick)
           setIsLoading(false)
-          // Enrich with DB profile in the background
-          const full = await fetchProfile(session.user.id)
-          if (active && full) setUser(full)
-        } else {
-          // No role in metadata — must wait for DB
-          const full = await fetchProfile(session.user.id)
-          if (active && full) setUser(full)
-          if (active) setIsLoading(false)
         }
+        // Enrich with DB profile (sets isLoading=false if quick was null)
+        enrichInBackground(session.user.id)
       } else {
         if (active) setIsLoading(false)
       }
+    }).catch(() => {
+      if (active) setIsLoading(false)
     })
 
-    // Only handle explicit auth events after initial load
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // IMPORTANT: this callback must NOT be async — Supabase awaits all subscribers
+    // before resolving signInWithPassword, so any await here blocks the login button.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return
       if (event === 'SIGNED_IN') {
         if (session) {
           const quick = profileFromSession(session)
-          if (quick) setUser(quick)
-          const full = await fetchProfile(session.user.id)
-          if (active && full) setUser(full)
+          if (quick) {
+            setUser(quick)
+            setIsLoading(false)
+          }
+          // Fire DB enrichment without blocking the Supabase subscriber
+          enrichInBackground(session.user.id)
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null)
@@ -97,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName, role } },
+      options: { data: { full_name: toTitleCase(fullName), role } },
     })
     if (error) throw error
   }
@@ -114,12 +135,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updateProfile(fullName: string) {
     if (!user) return
+    const normalised = toTitleCase(fullName)
     const { error } = await supabase
       .from('users')
-      .update({ full_name: fullName })
+      .update({ full_name: normalised })
       .eq('id', user.id)
     if (error) throw error
-    setUser({ ...user, full_name: fullName })
+    setUser({ ...user, full_name: normalised })
   }
 
   return (
