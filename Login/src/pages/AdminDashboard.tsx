@@ -35,7 +35,7 @@ interface MaintenanceRow { id: string; title: string | null; description: string
 type MaintenanceFilter = 'all' | 'open' | 'in_progress' | 'resolved' | 'compliance' | 'viewings'
 interface ViewingRequest { id: string; property_id: string | null; name: string; email: string; phone: string | null; preferred_date: string; preferred_time: string; message: string | null; status: string; created_at: string; properties: { address: string } | null }
 interface ComplianceAlert { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; document_url: string | null; notes: string | null; properties: { address: string } | null }
-type PropStatus = 'active' | 'vacant' | 'viewings' | 'empty'
+type PropStatus = 'tenanted' | 'notice' | 'viewings' | 'for_let'
 interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; profiles: { full_name: string | null; email: string } | null }
 interface ComplianceItem { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; status: string | null; document_url: string | null; notes: string | null }
 interface PropertyTenancyInfo { id: string; tenant_id: string; tenant_name: string | null; tenant_email: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null }
@@ -118,7 +118,8 @@ export default function AdminDashboard() {
   const [monthlyRentRoll, setMonthlyRentRoll] = useState<number>(0)
   const [ytdGross, setYtdGross] = useState<number>(0)
   const [ytdNet, setYtdNet] = useState<number>(0)
-  const [rentCollection, setRentCollection] = useState<{ address: string; expected: number; collected: number; isPaid: boolean }[]>([])
+  const [rentCollection, setRentCollection] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; collected: number; isPaid: boolean; isVacant: boolean; paymentId: string | null; dueDate: string | null; paymentMethod: string | null; paymentNotes: string | null }[]>([])
+  const [markPaidItem, setMarkPaidItem] = useState<{ tenancyId: string; address: string; expected: number; paymentId: string | null; dueDate: string | null } | null>(null)
   const [signals, setSignals] = useState<ImprovementSignal[]>([])
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('6M')
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
@@ -170,6 +171,7 @@ export default function AdminDashboard() {
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
   const [auditLoading, setAuditLoading] = useState(false)
   const [propertyTenancy, setPropertyTenancy] = useState<PropertyTenancyInfo | null>(null)
+  const [propertyTenancies, setPropertyTenancies] = useState<PropertyTenancyInfo[]>([])
   const [propertyTenancyLoading, setPropertyTenancyLoading] = useState(false)
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false)
   const [linkTenantPropertyId, setLinkTenantPropertyId] = useState<string | null>(null)
@@ -348,13 +350,14 @@ export default function AdminDashboard() {
       .select('id, tenant_id, start_date, end_date, monthly_rent, deposit_scheme, deposit_registered_date, last_rent_increase_date, profiles(full_name, email)')
       .eq('property_id', propertyId)
       .eq('is_current', true)
-      .maybeSingle()
-    if (data) {
-      const raw = data as unknown as { id: string; tenant_id: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null; profiles: { full_name: string | null; email: string } | null }
-      setPropertyTenancy({ id: raw.id, tenant_id: raw.tenant_id, tenant_name: raw.profiles?.full_name ?? null, tenant_email: raw.profiles?.email ?? '', start_date: raw.start_date, end_date: raw.end_date, monthly_rent: raw.monthly_rent, deposit_scheme: raw.deposit_scheme, deposit_registered_date: raw.deposit_registered_date, last_rent_increase_date: raw.last_rent_increase_date })
-    } else {
-      setPropertyTenancy(null)
-    }
+      .order('start_date')
+    const rows = (data ?? []) as unknown as Array<{ id: string; tenant_id: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null; profiles: { full_name: string | null; email: string } | { full_name: string | null; email: string }[] | null }>
+    const mapped = rows.map(raw => {
+      const prof = Array.isArray(raw.profiles) ? raw.profiles[0] ?? null : raw.profiles
+      return { id: raw.id, tenant_id: raw.tenant_id, tenant_name: prof?.full_name ?? null, tenant_email: prof?.email ?? '', start_date: raw.start_date, end_date: raw.end_date, monthly_rent: raw.monthly_rent, deposit_scheme: raw.deposit_scheme, deposit_registered_date: raw.deposit_registered_date, last_rent_increase_date: raw.last_rent_increase_date }
+    })
+    setPropertyTenancies(mapped)
+    setPropertyTenancy(mapped[0] ?? null)
     setPropertyTenancyLoading(false)
   }
 
@@ -598,10 +601,10 @@ export default function AdminDashboard() {
 
       const [propsRes, tenanciesForCollRes, paymentsRes, allPaymentsRes, thisMonthPaysRes, maintRes] = await Promise.all([
         supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price'),
-        supabase.from('tenancies').select('id, property_id, monthly_rent, properties!inner(address, status)').eq('is_current', true).eq('properties.status', 'active'),
+        supabase.from('tenancies').select('id, property_id, monthly_rent').eq('is_current', true),
         supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr),
         supabase.from('payments').select('amount, due_date').gte('due_date', cutoffStr),
-        supabase.from('payments').select('tenancy_id, amount, paid_date').gte('due_date', monthStart).lte('due_date', monthEnd),
+        supabase.from('payments').select('id, tenancy_id, amount, due_date, paid_date, status, payment_method, notes').gte('due_date', monthStart).lte('due_date', monthEnd),
         supabase.from('maintenance_requests').select('cost, created_at').not('cost', 'is', null).gte('created_at', cutoffStr),
       ])
 
@@ -609,7 +612,7 @@ export default function AdminDashboard() {
       setPropertyCount(allProps.length)
 
       // Rent roll and tenanted count driven by property status (source of truth from the app)
-      const activeProps = allProps.filter(p => p.status === 'active')
+      const activeProps = allProps.filter(p => p.status === 'tenanted')
       const rentRoll = activeProps.reduce((s, p) => s + Number(p.monthly_rent ?? 0), 0)
       setMonthlyRentRoll(rentRoll)
       setTenantedCount(activeProps.length)
@@ -620,19 +623,34 @@ export default function AdminDashboard() {
       setYtdGross(ytdGrossVal)
       setYtdNet(ytdGrossVal - ytdMaint)
 
-      // Rent collection for current month
-      const tenanciesForColl = (tenanciesForCollRes.data ?? []) as unknown as { id: string; property_id: string; monthly_rent: number | null; properties: { address: string; status: string } | { address: string; status: string }[] }[]
-      const thisMonthPays = (thisMonthPaysRes.data ?? []) as { tenancy_id: string; amount: number; paid_date: string | null }[]
-      const collectionItems = tenanciesForColl.map(t => {
-        const prop = Array.isArray(t.properties) ? t.properties[0] : t.properties
-        const payment = thisMonthPays.find(p => p.tenancy_id === t.id)
-        return {
-          address: prop?.address ?? 'Unknown',
-          expected: Number(t.monthly_rent ?? 0),
-          collected: payment?.paid_date ? Number(payment.amount ?? 0) : 0,
-          isPaid: !!(payment?.paid_date),
-        }
-      })
+      // Rent collection for current month — all properties
+      const tenanciesForColl = (tenanciesForCollRes.data ?? []) as { id: string; property_id: string; monthly_rent: number | null }[]
+      const thisMonthPays = (thisMonthPaysRes.data ?? []) as { id: string; tenancy_id: string; amount: number; due_date: string; paid_date: string | null; status: string | null; payment_method: string | null; notes: string | null }[]
+      const tenancyByPropId: Record<string, { id: string; monthly_rent: number | null }> = {}
+      for (const t of tenanciesForColl) tenancyByPropId[t.property_id] = t
+      const collectionItems = [...allProps]
+        .sort((a, b) => a.address.localeCompare(b.address))
+        .map(prop => {
+          const tenancy = tenancyByPropId[prop.id]
+          const isTenanted = !!tenancy && prop.status === 'tenanted'
+          if (!isTenanted) {
+            return { tenancyId: tenancy?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null }
+          }
+          const payment = thisMonthPays.find(p => p.tenancy_id === tenancy.id)
+          return {
+            tenancyId: tenancy.id,
+            propertyId: prop.id,
+            address: prop.address,
+            expected: Number(tenancy.monthly_rent ?? prop.monthly_rent ?? 0),
+            collected: payment?.paid_date ? Number(payment.amount ?? 0) : 0,
+            isPaid: !!(payment?.paid_date),
+            isVacant: false,
+            paymentId: payment?.id ?? null,
+            dueDate: payment?.due_date ?? null,
+            paymentMethod: payment?.payment_method ?? null,
+            paymentNotes: payment?.notes ?? null,
+          }
+        })
       setRentCollection(collectionItems)
 
       // Actual payments received, grouped by month (by paid_date)
@@ -1122,6 +1140,17 @@ export default function AdminDashboard() {
     if (data) { setSelectedProperty(data as unknown as AdminPropRow); setTab('properties') }
   }
 
+  async function navigateToRentProperty(propertyId: string) {
+    const cached = adminProps.find(p => p.id === propertyId)
+    if (cached) { setSelectedProperty(cached); return }
+    const { data } = await supabase
+      .from('properties')
+      .select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, profiles(full_name, email)')
+      .eq('id', propertyId)
+      .maybeSingle()
+    if (data) setSelectedProperty(data as unknown as AdminPropRow)
+  }
+
   const filteredSnaps = (() => { const n = analyticsPeriod === '3M' ? 3 : analyticsPeriod === '6M' ? 6 : 12; return snapshots.slice(-n) })()
   const totalCollected = filteredSnaps.reduce((s, r) => s + r.rentCollected, 0)
   const totalExpected = filteredSnaps.reduce((s, r) => s + r.rentExpected, 0)
@@ -1141,7 +1170,7 @@ export default function AdminDashboard() {
   const filteredMaintenance = maintenanceItems.filter((m) => maintenanceFilter === 'all' ? true : m.status === maintenanceFilter)
   const filteredAdminProps = adminProps.filter((p) => {
     if (propStatusFilter === 'listed') { if (!p.is_listed) return false }
-    else if (propStatusFilter !== 'all' && (p.status ?? 'vacant') !== propStatusFilter) return false
+    else if (propStatusFilter !== 'all' && (p.status ?? 'for_let') !== propStatusFilter) return false
     if (!propSearch) return true
     const q = propSearch.toLowerCase()
     return p.address.toLowerCase().includes(q) || (p.postcode ?? '').toLowerCase().includes(q) || (p.profiles?.full_name ?? '').toLowerCase().includes(q) || (p.profiles?.email ?? '').toLowerCase().includes(q)
@@ -1412,11 +1441,12 @@ export default function AdminDashboard() {
       )}
 
       {/* ── RENT COLLECTION ── */}
-      {tab === 'rent' && (() => {
-        const totalExp = rentCollection.reduce((s, r) => s + r.expected, 0)
-        const totalColl = rentCollection.reduce((s, r) => s + r.collected, 0)
+      {tab === 'rent' && !selectedProperty && (() => {
+        const activeRows = rentCollection.filter(r => !r.isVacant)
+        const totalExp = activeRows.reduce((s, r) => s + r.expected, 0)
+        const totalColl = activeRows.reduce((s, r) => s + r.collected, 0)
         const outstanding = totalExp - totalColl
-        const paidCount = rentCollection.filter(r => r.isPaid).length
+        const paidCount = activeRows.filter(r => r.isPaid).length
         const fraction = totalExp > 0 ? totalColl / totalExp : 0
         const monthName = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
         const ringColor = fraction >= 1 ? '#4ade80' : fraction >= 0.75 ? '#fbbf24' : '#f87171'
@@ -1448,7 +1478,7 @@ export default function AdminDashboard() {
                 {/* Totals */}
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 28, fontWeight: 300, color: '#4ade80', fontFamily: 'Georgia, serif', lineHeight: 1 }}>{gbp(totalColl)}</p>
-                  <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>of {gbp(totalExp)} expected · {paidCount}/{rentCollection.length} paid</p>
+                  <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>of {gbp(totalExp)} expected · {paidCount}/{activeRows.length} paid</p>
                   {outstanding > 0 && (
                     <p style={{ fontSize: 11, color: '#fbbf24', marginTop: 6 }}>{gbp(outstanding)} outstanding</p>
                   )}
@@ -1467,23 +1497,48 @@ export default function AdminDashboard() {
             <div>
               <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 10 }}>Per Property</p>
               {rentCollection.length === 0 ? (
-                <div style={{ ...CARD, padding: 20, textAlign: 'center', color: '#8899aa', fontSize: 13 }}>No tenancies this month</div>
+                <div style={{ ...CARD, padding: 20, textAlign: 'center', color: '#8899aa', fontSize: 13 }}>No properties found</div>
               ) : (
                 <div style={CARD}>
                   {rentCollection.map((row, i) => (
                     <div key={i}>
                       <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: row.isPaid ? '#4ade80' : '#fbbf24', flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{row.address}</p>
-                          <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>{row.isPaid ? 'Paid' : 'Outstanding'}</p>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <p style={{ fontSize: 14, fontFamily: 'Georgia, serif', color: row.isPaid ? '#4ade80' : '#fbbf24' }}>
-                            {row.isPaid ? gbp(row.collected) : gbp(row.expected)}
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: row.isVacant ? '#8899aa' : row.isPaid ? '#4ade80' : '#fbbf24', flexShrink: 0, marginTop: 2 }} />
+                        <button type="button"
+                          onClick={() => navigateToRentProperty(row.propertyId)}
+                          style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                          <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif', textDecoration: 'none' }} className="truncate"
+                            onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+                            onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>
+                            {row.address}
                           </p>
-                          {!row.isPaid && (
-                            <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>due</p>
+                          <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>
+                            {row.isVacant
+                              ? 'Vacant'
+                              : row.isPaid
+                                ? `Paid${row.paymentMethod ? ` · ${row.paymentMethod}` : ''}${row.paymentNotes ? ` · ${row.paymentNotes}` : ''}`
+                                : 'Outstanding'}
+                          </p>
+                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                          {row.isVacant ? (
+                            <span style={{ fontSize: 10, color: '#8899aa', padding: '3px 8px', borderRadius: 4, background: 'rgba(136,153,170,0.1)', border: '1px solid rgba(136,153,170,0.2)' }}>Vacant</span>
+                          ) : (
+                            <>
+                              <div style={{ textAlign: 'right' }}>
+                                <p style={{ fontSize: 14, fontFamily: 'Georgia, serif', color: row.isPaid ? '#4ade80' : '#fbbf24' }}>
+                                  {row.isPaid ? gbp(row.collected) : gbp(row.expected)}
+                                </p>
+                                {!row.isPaid && <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>due</p>}
+                              </div>
+                              {!row.isPaid && (
+                                <button type="button"
+                                  onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate })}
+                                  style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                  Mark Paid
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -1497,6 +1552,28 @@ export default function AdminDashboard() {
         )
       })()}
 
+      {/* ── MARK PAID MODAL ── */}
+      {markPaidItem && (
+        <MarkPaidModal
+          tenancyId={markPaidItem.tenancyId}
+          address={markPaidItem.address}
+          expected={markPaidItem.expected}
+          paymentId={markPaidItem.paymentId}
+          dueDate={markPaidItem.dueDate}
+          adminId={user?.id ?? ''}
+          adminRole={user?.role ?? 'admin'}
+          onClose={() => setMarkPaidItem(null)}
+          onSaved={(tenancyId, paymentId, paymentMethod, notes) => {
+            setRentCollection(prev => prev.map(r =>
+              r.tenancyId === tenancyId
+                ? { ...r, isPaid: true, collected: r.expected, paymentId, paymentMethod, paymentNotes: notes }
+                : r
+            ))
+            setMarkPaidItem(null)
+          }}
+        />
+      )}
+
       {/* ── USERS ── */}
       {tab === 'users' && selectedUser && (
         <UserDetailPanel
@@ -1504,6 +1581,7 @@ export default function AdminDashboard() {
           onBack={() => setSelectedUser(null)}
           onViewProperty={(p) => { setSelectedProperty(p); setTab('properties') }}
           onStatusChange={(userId, status) => setUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u))}
+          onDelete={(userId) => { setUsers(prev => prev.filter(u => u.id !== userId)); setSelectedUser(null) }}
         />
       )}
       {tab === 'users' && !selectedUser && (
@@ -1656,7 +1734,7 @@ export default function AdminDashboard() {
       )}
 
       {/* ── PROPERTIES ── */}
-      {tab === 'properties' && selectedProperty && (
+      {(tab === 'properties' || tab === 'rent') && selectedProperty && (
         <div className="flex flex-col">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
             <button type="button" onClick={() => { setSelectedProperty(null); setShowTenantInfoPack(false) }}
@@ -1683,7 +1761,7 @@ export default function AdminDashboard() {
           {/* Details */}
           <div style={{ padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {[
-              ['Status', selectedProperty.status ?? 'vacant'],
+              ['Status', (() => { const st = (selectedProperty.status ?? 'for_let') as PropStatus; const lbl = PROP_STATUS_LABEL[st] ?? st; return st === 'notice' && propertyTenancy?.end_date ? `${lbl} — vacating ${new Date(propertyTenancy.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : lbl })()],
               ['Type', selectedProperty.property_type ? selectedProperty.property_type.charAt(0).toUpperCase() + selectedProperty.property_type.slice(1) : '—'],
               ['Bedrooms', selectedProperty.bedrooms != null ? String(selectedProperty.bedrooms) : '—'],
               ['Rent PCM', selectedProperty.monthly_rent != null ? `£${selectedProperty.monthly_rent.toLocaleString()}` : '—'],
@@ -1702,43 +1780,45 @@ export default function AdminDashboard() {
               <p style={{ fontSize: 13, color: '#8899aa', lineHeight: 1.6 }}>{selectedProperty.description}</p>
             </div>
           )}
-          {/* Current Tenant */}
+          {/* Tenants */}
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Current Tenant</p>
-              {!propertyTenancy && !propertyTenancyLoading && (
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Tenants</p>
+              {!propertyTenancyLoading && (
                 <button type="button" onClick={() => openLinkTenantModal(selectedProperty.id)}
                   style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                  + Assign Tenant
+                  + Add Tenant
                 </button>
               )}
             </div>
             {propertyTenancyLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>Loading…</p>
-            ) : propertyTenancy ? (
+            ) : propertyTenancies.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{propertyTenancy.tenant_name ?? propertyTenancy.tenant_email}</p>
-                    <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>{propertyTenancy.tenant_email}</p>
-                    <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>
-                      From {fmtDate(propertyTenancy.start_date)}
-                      {propertyTenancy.monthly_rent != null ? ` · £${propertyTenancy.monthly_rent.toLocaleString()}/mo` : ''}
-                    </p>
+                {propertyTenancies.map(t => (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{t.tenant_name ?? t.tenant_email}</p>
+                      <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>{t.tenant_email}</p>
+                      <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>
+                        From {fmtDate(t.start_date)}
+                        {t.monthly_rent != null ? ` · £${t.monthly_rent.toLocaleString()}/mo` : ''}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => handleEndTenancy(t.id)}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(248,113,113,0.08)', color: '#f87171', border: '1px solid rgba(248,113,113,0.2)', cursor: 'pointer', flexShrink: 0 }}>
+                      End
+                    </button>
                   </div>
-                  <button type="button" onClick={() => handleEndTenancy(propertyTenancy.id)}
-                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(248,113,113,0.08)', color: '#f87171', border: '1px solid rgba(248,113,113,0.2)', cursor: 'pointer', flexShrink: 0 }}>
-                    End Tenancy
-                  </button>
-                </div>
+                ))}
               </div>
             ) : (
-              <p style={{ fontSize: 12, color: '#8899aa' }}>No tenant assigned. Use "+ Assign Tenant" to link a tenant to this property.</p>
+              <p style={{ fontSize: 12, color: '#8899aa' }}>No tenants assigned. Use "+ Add Tenant" to link a tenant to this property.</p>
             )}
           </div>
 
           {/* PRT Agreement — only shown when an active tenancy exists */}
-          {(propertyTenancy || prtDoc) && (
+          {(propertyTenancies.length > 0 || prtDoc) && (
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>PRT Agreement</p>
@@ -2392,7 +2472,7 @@ export default function AdminDashboard() {
                       ['Type', selectedProperty.property_type ? selectedProperty.property_type.charAt(0).toUpperCase() + selectedProperty.property_type.slice(1) : '—'],
                       ['Bedrooms', selectedProperty.bedrooms != null ? String(selectedProperty.bedrooms) : '—'],
                       ['Monthly Rent', selectedProperty.monthly_rent != null ? `£${Number(selectedProperty.monthly_rent).toLocaleString()}` : '—'],
-                      ['Status', selectedProperty.status ?? 'vacant'],
+                      ['Status', PROP_STATUS_LABEL[(selectedProperty.status ?? 'for_let') as PropStatus] ?? (selectedProperty.status ?? 'for_let')],
                     ].map(([l, v]) => (
                       <div key={l}>
                         <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>{l}</p>
@@ -2405,18 +2485,22 @@ export default function AdminDashboard() {
                 {/* Tenancy details */}
                 <div style={{ ...CARD, padding: 14 }}>
                   <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 10 }}>Tenancy</p>
-                  {propertyTenancy ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {[
-                        ['Tenant', propertyTenancy.tenant_name ?? propertyTenancy.tenant_email],
-                        ['Email', propertyTenancy.tenant_email],
-                        ['Start Date', fmtDate(propertyTenancy.start_date)],
-                        ['End Date', propertyTenancy.end_date ? fmtDate(propertyTenancy.end_date) : 'Open-ended'],
-                        ['Monthly Rent', propertyTenancy.monthly_rent != null ? `£${Number(propertyTenancy.monthly_rent).toLocaleString()}` : '—'],
-                      ].map(([l, v]) => (
-                        <div key={l}>
-                          <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>{l}</p>
-                          <p style={{ fontSize: 13, color: '#e8edf5' }}>{v}</p>
+                  {propertyTenancies.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {propertyTenancies.map((t, i) => (
+                        <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, ...(i > 0 ? { paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' } : {}) }}>
+                          {[
+                            ['Tenant', t.tenant_name ?? t.tenant_email],
+                            ['Email', t.tenant_email],
+                            ['Start Date', fmtDate(t.start_date)],
+                            ['End Date', t.end_date ? fmtDate(t.end_date) : 'Open-ended'],
+                            ['Monthly Rent', t.monthly_rent != null ? `£${Number(t.monthly_rent).toLocaleString()}` : '—'],
+                          ].map(([l, v]) => (
+                            <div key={l}>
+                              <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>{l}</p>
+                              <p style={{ fontSize: 13, color: '#e8edf5' }}>{v}</p>
+                            </div>
+                          ))}
                         </div>
                       ))}
                     </div>
@@ -2744,14 +2828,14 @@ export default function AdminDashboard() {
           <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 6, overflowX: 'auto', alignItems: 'center' }}>
             {([
               { key: 'all',      label: 'All',      style: { background: 'rgba(255,255,255,0.06)', color: '#8899aa' } },
-              { key: 'active',   label: 'Active',   style: PROP_STATUS_STYLE.active },
-              { key: 'vacant',   label: 'Vacant',   style: PROP_STATUS_STYLE.vacant },
-              { key: 'viewings', label: 'Viewings', style: PROP_STATUS_STYLE.viewings },
-              { key: 'empty',    label: 'Empty',    style: PROP_STATUS_STYLE.empty },
-              { key: 'listed',   label: 'Listed for Let', style: { background: 'rgba(74,222,128,0.12)', color: '#4ade80' } },
+              { key: 'tenanted',  label: 'Tenanted',          style: PROP_STATUS_STYLE.tenanted },
+              { key: 'notice',    label: 'Handed in Notice',  style: PROP_STATUS_STYLE.notice },
+              { key: 'viewings',  label: 'Viewings',          style: PROP_STATUS_STYLE.viewings },
+              { key: 'for_let',   label: 'Listed for Let',    style: PROP_STATUS_STYLE.for_let },
+              { key: 'listed',    label: 'Has Listing',       style: { background: 'rgba(74,222,128,0.12)', color: '#4ade80' } },
             ] as { key: PropStatus | 'all' | 'listed'; label: string; style: React.CSSProperties }[]).map(({ key, label, style }) => {
               const isActive = propStatusFilter === key
-              const count = key === 'all' ? null : key === 'listed' ? adminProps.filter(p => p.is_listed).length : adminProps.filter(p => (p.status ?? 'vacant') === key).length
+              const count = key === 'all' ? null : key === 'listed' ? adminProps.filter(p => p.is_listed).length : adminProps.filter(p => (p.status ?? 'for_let') === key).length
               return (
                 <button key={key} type="button" onClick={() => setPropStatusFilter(key)}
                   className="flex-shrink-0 px-3 py-1 rounded-full text-[11px] font-medium"
@@ -3173,6 +3257,7 @@ export default function AdminDashboard() {
           <LinkTenantModal
             property={prop}
             tenants={tenantUsers}
+            currentTenants={selectedProperty?.id === linkTenantPropertyId ? propertyTenancies : []}
             onClose={() => setLinkTenantPropertyId(null)}
             onSaved={() => {
               setAdminPropsLoaded(false)
@@ -3493,12 +3578,125 @@ function AddPropertyModal({ landlords, onClose, onSaved }: {
   )
 }
 
-function LinkTenantModal({ property, tenants, onClose, onSaved }: {
+const PAYMENT_METHODS = ['Bank Transfer', 'Standing Order', 'Cash', 'Cheque', 'Other']
+
+function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, adminId, adminRole, onClose, onSaved }: {
+  tenancyId: string
+  address: string
+  expected: number
+  paymentId: string | null
+  dueDate: string | null
+  adminId: string
+  adminRole: string
+  onClose: () => void
+  onSaved: (tenancyId: string, paymentId: string, paymentMethod: string, notes: string) => void
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+  const defaultDueDate = dueDate ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
+  const [method, setMethod] = useState('Bank Transfer')
+  const [notes, setNotes] = useState('')
+  const [paidDate, setPaidDate] = useState(today)
+  const [amount, setAmount] = useState(String(expected))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!paidDate) { setError('Paid date is required'); return }
+    if (!amount || isNaN(parseFloat(amount))) { setError('Amount is required'); return }
+    setSaving(true); setError(null)
+
+    let finalPaymentId = paymentId
+    if (finalPaymentId) {
+      const { error: upErr } = await supabase.from('payments').update({
+        paid_date: paidDate,
+        status: 'paid',
+        payment_method: method,
+        notes: notes || null,
+        recorded_by: adminId || null,
+        amount: parseFloat(amount),
+      }).eq('id', finalPaymentId)
+      if (upErr) { setError(upErr.message); setSaving(false); return }
+    } else {
+      const { data, error: insErr } = await supabase.from('payments').insert({
+        tenancy_id: tenancyId,
+        amount: parseFloat(amount),
+        due_date: defaultDueDate,
+        paid_date: paidDate,
+        status: 'paid',
+        payment_method: method,
+        notes: notes || null,
+        recorded_by: adminId || null,
+      }).select('id').single()
+      if (insErr || !data) { setError(insErr?.message ?? 'Failed to save'); setSaving(false); return }
+      finalPaymentId = (data as { id: string }).id
+    }
+
+    await supabase.from('audit_logs').insert({
+      action: 'payment_marked_paid',
+      entity_type: 'payment',
+      entity_id: finalPaymentId,
+      user_id: adminId || null,
+      user_role: adminRole,
+      metadata: {
+        amount: parseFloat(amount),
+        payment_method: method,
+        notes: notes || null,
+        address,
+        paid_date: paidDate,
+        due_date: defaultDueDate,
+      },
+    })
+
+    setSaving(false)
+    onSaved(tenancyId, finalPaymentId!, method, notes)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '0 16px' }}>
+      <div style={{ background: '#112240', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '90dvh', overflowY: 'auto', padding: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Mark Rent Paid</p>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8899aa', padding: 4, cursor: 'pointer', fontSize: 22, lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 18 }} className="truncate">{address}</p>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <FormField label="Payment Method *">
+            <select value={method} onChange={e => setMethod(e.target.value)} style={INPUT_STYLE}>
+              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <FormField label="Amount (£) *">
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} min="0" step="0.01" style={INPUT_STYLE} />
+            </FormField>
+            <FormField label="Date Paid *">
+              <input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} style={INPUT_STYLE} />
+            </FormField>
+          </div>
+          <FormField label="Notes">
+            <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. paid in advance, partial payment…" style={INPUT_STYLE} />
+          </FormField>
+          {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
+          <button type="submit" disabled={saving}
+            style={{ padding: '12px 0', borderRadius: 8, background: saving ? 'rgba(74,222,128,0.3)' : 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.3)', color: '#4ade80', fontSize: 13, fontWeight: 600, marginTop: 4, cursor: 'pointer' }}>
+            {saving ? 'Saving…' : 'Confirm Payment'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }: {
   property: AdminPropRow
   tenants: { id: string; email: string; full_name: string | null }[]
+  currentTenants: PropertyTenancyInfo[]
   onClose: () => void
   onSaved: () => void
 }) {
+  const linkedIds = new Set(currentTenants.map(t => t.tenant_id))
+  const availableTenants = tenants.filter(t => !linkedIds.has(t.id))
   const [tenantId, setTenantId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [rent, setRent] = useState(String(property.monthly_rent ?? ''))
@@ -3511,8 +3709,8 @@ function LinkTenantModal({ property, tenants, onClose, onSaved }: {
     if (!tenantId) { setError('Please select a tenant'); return }
     if (!startDate) { setError('Start date is required'); return }
     if (!rent) { setError('Monthly rent is required'); return }
+    if (linkedIds.has(tenantId)) { setError('This tenant is already linked to this property'); return }
     setSaving(true); setError(null)
-    await supabase.from('tenancies').update({ is_current: false }).eq('property_id', property.id).eq('is_current', true)
     const { error: dbError } = await supabase.from('tenancies').insert({
       property_id: property.id,
       tenant_id: tenantId,
@@ -3531,15 +3729,28 @@ function LinkTenantModal({ property, tenants, onClose, onSaved }: {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '0 16px' }}>
       <div style={{ background: '#112240', borderRadius: 16, width: '100%', maxWidth: 520, maxHeight: '90dvh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Link Tenant</p>
+          <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Add Tenant</p>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8899aa', padding: 4, cursor: 'pointer', fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
         <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 18 }} className="truncate">{property.address}</p>
+        {currentTenants.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Currently Linked</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {currentTenants.map(t => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ fontSize: 13, color: '#e8edf5' }}>{t.tenant_name ?? t.tenant_email}</span>
+                  <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4ade80', padding: '2px 8px', borderRadius: 4, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)' }}>Active</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <FormField label="Tenant *">
             <select value={tenantId} onChange={e => setTenantId(e.target.value)} style={INPUT_STYLE}>
               <option value="">Select tenant</option>
-              {tenants.map(t => <option key={t.id} value={t.id}>{t.full_name ?? t.email}</option>)}
+              {availableTenants.map(t => <option key={t.id} value={t.id}>{t.full_name ?? t.email}</option>)}
             </select>
           </FormField>
           <FormField label="Start Date *">
@@ -3554,10 +3765,14 @@ function LinkTenantModal({ property, tenants, onClose, onSaved }: {
             </FormField>
           </div>
           {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
-          <button type="submit" disabled={saving}
-            style={{ padding: '12px 0', borderRadius: 8, background: saving ? 'rgba(232,237,245,0.4)' : '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 13, fontWeight: 600, marginTop: 4 }}>
-            {saving ? 'Linking…' : 'Link Tenant'}
-          </button>
+          {availableTenants.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>All registered tenants are already linked to this property.</p>
+          ) : (
+            <button type="submit" disabled={saving}
+              style={{ padding: '12px 0', borderRadius: 8, background: saving ? 'rgba(232,237,245,0.4)' : '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 13, fontWeight: 600, marginTop: 4 }}>
+              {saving ? 'Linking…' : 'Link Tenant'}
+            </button>
+          )}
         </form>
       </div>
     </div>
@@ -3657,6 +3872,7 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [created, setCreated] = useState(false)
+  const [templateUrl, setTemplateUrl] = useState('')
 
   async function handleCreateJob() {
     setCreating(true)
@@ -3672,6 +3888,7 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
         priority,
         status: 'open',
         request_type: 'compliance',
+        ...(templateUrl.trim() ? { compliance_template_url: templateUrl.trim() } : {}),
       })
       if (error) throw error
       // Best-effort notification — don't await, don't block the UI
@@ -3759,6 +3976,23 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
             </div>
           ) : (
             <>
+              {/* Template PDF URL */}
+              <div>
+                <p style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>
+                  Template PDF Link <span style={{ opacity: 0.6 }}>(optional)</span>
+                </p>
+                <input
+                  type="url"
+                  value={templateUrl}
+                  onChange={e => setTemplateUrl(e.target.value)}
+                  placeholder="Paste link to certificate template for contractor…"
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 8,
+                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#e8edf5', fontSize: 13, outline: 'none',
+                  }}
+                />
+              </div>
               <button type="button" onClick={handleCreateJob} disabled={creating}
                 style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: creating ? 'rgba(251,191,36,0.1)' : 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 14, fontWeight: 500, opacity: creating ? 0.6 : 1 }}>
                 {creating ? 'Creating…' : 'Create Job for Contractor'}
@@ -3780,19 +4014,28 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
   )
 }
 
-function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
+function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelete }: {
   user: UserRow
   onBack: () => void
   onViewProperty: (p: AdminPropRow) => void
   onStatusChange: (userId: string, status: 'active' | 'suspended') => void
+  onDelete: (userId: string) => void
 }) {
   const [landlordProps, setLandlordProps] = useState<AdminPropRow[]>([])
   const [tenancy, setTenancy] = useState<{ id: string; address: string; monthly_rent: number | null; start_date: string; end_date: string | null } | null>(null)
   const [contractorJobs, setContractorJobs] = useState<MaintenanceRow[]>([])
+  const [selectedContractorJob, setSelectedContractorJob] = useState<MaintenanceRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [localStatus, setLocalStatus] = useState(user.status)
   const [confirmSuspend, setConfirmSuspend] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showSetPassword, setShowSetPassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [settingPassword, setSettingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [regs, setRegs] = useState<LandlordRegistration[]>([])
   const [regsLoading, setRegsLoading] = useState(false)
   const [showAddReg, setShowAddReg] = useState(false)
@@ -3861,12 +4104,19 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
           setTenancy({ id: raw.id, address: raw.properties?.address ?? '', monthly_rent: raw.monthly_rent, start_date: raw.start_date, end_date: raw.end_date })
         }
       } else if (user.role === 'contractor') {
-        const { data } = await supabase
-          .from('maintenance_requests')
-          .select('id, title, description, priority, status, created_at, property_id')
-          .eq('assigned_contractor_id', user.id)
-          .order('created_at', { ascending: false })
-        setContractorJobs((data ?? []) as MaintenanceRow[])
+        const { data: contractorRow } = await supabase
+          .from('contractors')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (contractorRow?.id) {
+          const { data } = await supabase
+            .from('maintenance_requests')
+            .select('id, title, description, priority, status, created_at, property_id')
+            .eq('assigned_contractor_id', contractorRow.id)
+            .order('created_at', { ascending: false })
+          setContractorJobs((data ?? []) as MaintenanceRow[])
+        }
       }
       setLoading(false)
     }
@@ -3888,6 +4138,39 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
     const { error } = await supabase.from('users').update({ status: 'suspended' }).eq('id', user.id)
     setStatusUpdating(false)
     if (!error) { setLocalStatus('suspended'); setConfirmSuspend(false); onStatusChange(user.id, 'suspended') }
+  }
+
+  async function handleDeleteConfirmed() {
+    setDeleting(true)
+    const { error } = await supabase.functions.invoke('delete-user', {
+      body: { userId: user.id },
+    })
+    setDeleting(false)
+    if (!error) { onDelete(user.id); onBack() }
+  }
+
+  async function handleSetPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPassword.length < 8) { setPasswordError('Minimum 8 characters'); return }
+    setSettingPassword(true); setPasswordError(null); setPasswordSuccess(false)
+    const { error } = await supabase.functions.invoke('set-user-password', {
+      body: { userId: user.id, password: newPassword },
+    })
+    setSettingPassword(false)
+    if (error) { setPasswordError('Failed to set password'); return }
+    setPasswordSuccess(true)
+    setNewPassword('')
+    setTimeout(() => { setShowSetPassword(false); setPasswordSuccess(false) }, 1500)
+  }
+
+  if (selectedContractorJob) {
+    return (
+      <MaintenanceDetailPanel
+        request={selectedContractorJob}
+        onBack={() => setSelectedContractorJob(null)}
+        onUpdate={(id, updates) => setContractorJobs(prev => prev.map(j => j.id === id ? { ...j, ...updates } : j))}
+      />
+    )
   }
 
   return (
@@ -3948,6 +4231,62 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
               )}
             </div>
           )}
+          {/* Set Password */}
+          {user.role !== 'master admin' && (
+            <div style={{ marginTop: 10 }}>
+              {showSetPassword ? (
+                <form onSubmit={handleSetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input
+                    type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                    placeholder="New password (min 8 chars)" autoFocus
+                    style={{ ...INPUT_STYLE, fontSize: 13 }} />
+                  {passwordError && <p style={{ fontSize: 11, color: '#f87171' }}>{passwordError}</p>}
+                  {passwordSuccess && <p style={{ fontSize: 11, color: '#4ade80' }}>Password updated</p>}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => { setShowSetPassword(false); setNewPassword(''); setPasswordError(null) }}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', fontSize: 13 }}>
+                      Cancel
+                    </button>
+                    <button type="submit" disabled={settingPassword}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', color: '#60a5fa', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                      {settingPassword ? 'Saving…' : 'Set Password'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button type="button" onClick={() => setShowSetPassword(true)}
+                  style={{ width: '100%', padding: '10px 0', borderRadius: 8, background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', fontSize: 13, cursor: 'pointer' }}>
+                  Set Password
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Delete */}
+          {user.role !== 'master admin' && (
+            <div style={{ marginTop: 10 }}>
+              {confirmDelete ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <p style={{ fontSize: 12, color: '#f87171', textAlign: 'center' }}>Permanently delete this account?</p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => setConfirmDelete(false)}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', fontSize: 13 }}>
+                      Cancel
+                    </button>
+                    <button type="button" onClick={handleDeleteConfirmed} disabled={deleting}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      {deleting ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setConfirmDelete(true)}
+                  style={{ width: '100%', padding: '10px 0', borderRadius: 8, background: 'transparent', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171', fontSize: 13, cursor: 'pointer' }}>
+                  Delete Account
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Role-specific detail */}
@@ -3964,7 +4303,7 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {landlordProps.map(p => {
-                  const statusKey = (p.status ?? 'vacant') as PropStatus
+                  const statusKey = (p.status ?? 'for_let') as PropStatus
                   const statusStyle = PROP_STATUS_STYLE[statusKey]
                   const firstPhoto = p.photo_urls?.[0]
                   return (
@@ -3978,7 +4317,7 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
                       <div style={{ padding: 14 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                           <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif', flex: 1, minWidth: 0 }} className="truncate">{p.address}</p>
-                          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', textTransform: 'capitalize', ...statusStyle }}>{statusKey}</span>
+                          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>{PROP_STATUS_LABEL[statusKey] ?? statusKey}</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, fontSize: 11, color: '#8899aa' }}>
                           {p.property_type && <span>{p.property_type.charAt(0).toUpperCase() + p.property_type.slice(1)}</span>}
@@ -4135,7 +4474,12 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
                   const pb = badge(r.priority, 'priority')
                   return (
                     <div key={r.id}>
-                      <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedContractorJob(r)}
+                        style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', padding: '13px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}
+                        className="active:opacity-60"
+                      >
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{r.title ?? 'Untitled'}</p>
                           {r.description && <p style={{ fontSize: 12, color: '#8899aa', marginTop: 2 }} className="truncate">{r.description}</p>}
@@ -4147,7 +4491,7 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange }: {
                         <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0, ...sb }}>
                           {r.status ?? 'open'}
                         </span>
-                      </div>
+                      </button>
                       {i < contractorJobs.length - 1 && <div style={DIVIDER} />}
                     </div>
                   )
@@ -4171,13 +4515,18 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   onUpdate?: (id: string, updates: Partial<MaintenanceRow>) => void
 }) {
   type HistEntry = { id: string; old_status: string | null; new_status: string | null; notes: string | null; created_at: string }
-  type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null }
+  type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null; compliance_template_url: string | null }
   type ContractorOption = { id: string; business_name: string | null; full_name: string | null; email: string }
   type InvoiceRow = { id: string; invoice_number: string; total: number; status: string; description: string | null; created_at: string }
+  type CommentRow = { id: string; author_id: string | null; author_name: string | null; body: string; created_at: string }
 
   const [fullReq, setFullReq] = useState<FullRequest | null>(null)
   const [history, setHistory] = useState<HistEntry[]>([])
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
+  const [comments, setComments] = useState<CommentRow[]>([])
+  const [commentBody, setCommentBody] = useState('')
+  const [commentSaving, setCommentSaving] = useState(false)
+  const [commentError, setCommentError] = useState<string | null>(null)
   const [costInput, setCostInput] = useState('')
   const [costSaving, setCostSaving] = useState(false)
   const [tenantName, setTenantName] = useState<string | null>(null)
@@ -4192,11 +4541,24 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   const [contractorsLoading, setContractorsLoading] = useState(false)
   const [contractorsError, setContractorsError] = useState<string | null>(null)
 
+  // Admin create-invoice state
+  type AdminLineItem = { key: string; description: string; quantity: string; unit_price: string }
+  const newAdminLine = (): AdminLineItem => ({ key: String(Date.now() + Math.random()), description: '', quantity: '1', unit_price: '' })
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false)
+  const [adminInvLines, setAdminInvLines] = useState<AdminLineItem[]>([newAdminLine()])
+  const [adminInvVat, setAdminInvVat] = useState(false)
+  const [adminInvDesc, setAdminInvDesc] = useState('')
+  const [adminInvNotes, setAdminInvNotes] = useState('')
+  const [adminInvSaving, setAdminInvSaving] = useState(false)
+  const [adminInvError, setAdminInvError] = useState<string | null>(null)
+
+  const { user: adminUser } = useAuth()
+
   useEffect(() => {
     async function load() {
-      const [reqRes, histRes, invRes] = await Promise.all([
+      const [reqRes, histRes, invRes, commRes] = await Promise.all([
         supabase.from('maintenance_requests')
-          .select('tenant_id, tenancy_id, assigned_contractor_id, updated_at, resolved_at, photo_urls, completion_photo_urls, completion_document_url, request_type, cost')
+          .select('tenant_id, tenancy_id, assigned_contractor_id, updated_at, resolved_at, photo_urls, completion_photo_urls, completion_document_url, request_type, cost, compliance_template_url')
           .eq('id', request.id).maybeSingle(),
         supabase.from('maintenance_status_history')
           .select('id, old_status, new_status, notes, created_at')
@@ -4206,11 +4568,16 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
           .select('id, invoice_number, total, status, description, created_at')
           .eq('maintenance_request_id', request.id)
           .order('created_at', { ascending: true }),
+        supabase.from('maintenance_comments')
+          .select('id, author_id, author_name, body, created_at')
+          .eq('maintenance_request_id', request.id)
+          .order('created_at', { ascending: true }),
       ])
       const full = (reqRes.data as FullRequest | null)
       setFullReq(full)
       setHistory((histRes.data ?? []) as HistEntry[])
       setInvoices((invRes.data ?? []) as InvoiceRow[])
+      setComments((commRes.data ?? []) as CommentRow[])
 
       const lookups: Promise<void>[] = []
       if (full?.tenant_id) {
@@ -4395,6 +4762,69 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
     }
   }
 
+  async function handleAddComment(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = commentBody.trim()
+    if (!trimmed) return
+    setCommentSaving(true)
+    setCommentError(null)
+    const authorName = adminUser?.full_name || adminUser?.email || 'Admin'
+    const { data, error } = await supabase.from('maintenance_comments').insert({
+      maintenance_request_id: request.id,
+      author_id: adminUser?.id ?? null,
+      author_name: authorName,
+      body: trimmed,
+    }).select('id, author_id, author_name, body, created_at').single()
+    setCommentSaving(false)
+    if (error) {
+      setCommentError('Failed to save note. Please try again.')
+      return
+    }
+    const optimistic: CommentRow = data ?? {
+      id: crypto.randomUUID(),
+      author_id: adminUser?.id ?? null,
+      author_name: authorName,
+      body: trimmed,
+      created_at: new Date().toISOString(),
+    }
+    setComments(prev => [...prev, optimistic])
+    setCommentBody('')
+  }
+
+  function calcAdminLine(li: AdminLineItem) {
+    return Math.round((parseFloat(li.quantity) || 0) * (parseFloat(li.unit_price) || 0) * 100) / 100
+  }
+  function adminInvTotals() {
+    const subtotal = Math.round(adminInvLines.reduce((s, li) => s + calcAdminLine(li), 0) * 100) / 100
+    const vatAmount = adminInvVat ? Math.round(subtotal * 0.20 * 100) / 100 : 0
+    return { subtotal, vatAmount, total: Math.round((subtotal + vatAmount) * 100) / 100 }
+  }
+
+  async function handleAdminCreateInvoice() {
+    const valid = adminInvLines.filter(li => li.description.trim() && parseFloat(li.unit_price) > 0)
+    if (valid.length === 0) { setAdminInvError('Add at least one line item with a description and price.'); return }
+    if (!fullReq?.assigned_contractor_id) { setAdminInvError('No contractor assigned to this job.'); return }
+    setAdminInvSaving(true); setAdminInvError(null)
+    const { subtotal, vatAmount, total } = adminInvTotals()
+    const now = new Date()
+    const invNum = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 9000) + 1000)}`
+    const { data, error } = await supabase.from('contractor_invoices').insert({
+      contractor_id: fullReq.assigned_contractor_id,
+      maintenance_request_id: request.id,
+      invoice_number: invNum,
+      description: adminInvDesc.trim() || null,
+      line_items: valid.map(li => ({ description: li.description, quantity: parseFloat(li.quantity) || 1, unit_price: parseFloat(li.unit_price) || 0, amount: calcAdminLine(li) })),
+      subtotal, vat_rate: adminInvVat ? 20 : 0, vat_amount: vatAmount, total,
+      status: 'submitted',
+      notes: adminInvNotes.trim() || null,
+    }).select('id, invoice_number, total, status, description, created_at').single()
+    setAdminInvSaving(false)
+    if (error) { setAdminInvError('Failed to create invoice. Please try again.'); return }
+    if (data) setInvoices(prev => [...prev, data as InvoiceRow])
+    setShowCreateInvoice(false)
+    setAdminInvLines([newAdminLine()]); setAdminInvVat(false); setAdminInvDesc(''); setAdminInvNotes(''); setAdminInvError(null)
+  }
+
   async function handleApproveInvoice(invoiceId: string) {
     setActionSaving(true)
     setActionError(null)
@@ -4490,8 +4920,113 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   const isPendingReview = localStatus === 'pending_review'
   const hasApprovedFinancial = invoices.some(inv => inv.status === 'approved') || (fullReq?.cost != null && Number(fullReq.cost) > 0)
 
+  const { subtotal: aSubtotal, vatAmount: aVat, total: aTotal } = adminInvTotals()
+
   return (
     <div className="flex flex-col" style={{ background: '#0d1b2e', minHeight: '100%' }}>
+
+      {/* Admin create-invoice overlay */}
+      {showCreateInvoice && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#0a192f', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <button type="button" onClick={() => { setShowCreateInvoice(false); setAdminInvError(null) }}
+              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8899aa', flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </button>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#e8edf5', fontFamily: 'Georgia, serif', margin: 0 }}>Create Invoice</h2>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+              <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>Job</p>
+              <p style={{ fontSize: 13, color: '#e8edf5' }}>{request.title ?? 'Untitled'}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>Description (optional)</p>
+              <input type="text" placeholder="e.g. Plumbing repair — bathroom" value={adminInvDesc} onChange={e => setAdminInvDesc(e.target.value)}
+                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Line Items</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {adminInvLines.map((li, idx) => (
+                  <div key={li.key} style={{ ...CARD, padding: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <p style={{ fontSize: 11, color: '#8899aa', letterSpacing: '0.08em' }}>ITEM {idx + 1}</p>
+                      {adminInvLines.length > 1 && (
+                        <button type="button" onClick={() => setAdminInvLines(prev => prev.filter(l => l.key !== li.key))}
+                          style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px' }}>×</button>
+                      )}
+                    </div>
+                    <input type="text" placeholder="Description" value={li.description}
+                      onChange={e => setAdminInvLines(prev => prev.map(l => l.key === li.key ? { ...l, description: e.target.value } : l))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', marginBottom: 8, boxSizing: 'border-box' }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      {(['Qty', 'Unit Price (£)', 'Amount'] as const).map((label, fi) => (
+                        <div key={label}>
+                          <p style={{ fontSize: 10, color: '#8899aa', marginBottom: 4 }}>{label}</p>
+                          {fi < 2 ? (
+                            <input type="number" min="0" step={fi === 0 ? '0.5' : '0.01'} placeholder="0.00"
+                              value={fi === 0 ? li.quantity : li.unit_price}
+                              onChange={e => setAdminInvLines(prev => prev.map(l => l.key === li.key ? { ...l, [fi === 0 ? 'quantity' : 'unit_price']: e.target.value } : l))}
+                              style={{ width: '100%', padding: '7px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                          ) : (
+                            <div style={{ padding: '7px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#4ade80', fontSize: 13 }}>
+                              £{calcAdminLine(li).toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => setAdminInvLines(prev => [...prev, newAdminLine()])}
+                style={{ marginTop: 10, width: '100%', padding: '10px', background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 8, color: '#8899aa', fontSize: 13, cursor: 'pointer' }}>
+                + Add Item
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <p style={{ fontSize: 14, color: '#e8edf5' }}>Include VAT (20%)</p>
+                <p style={{ fontSize: 12, color: '#8899aa', marginTop: 2 }}>UK standard rate</p>
+              </div>
+              <button type="button" onClick={() => setAdminInvVat(v => !v)}
+                style={{ width: 48, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer', background: adminInvVat ? '#60a5fa' : 'rgba(255,255,255,0.12)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                <span style={{ position: 'absolute', top: 4, left: adminInvVat ? 24 : 4, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+              </button>
+            </div>
+            <div style={{ ...CARD, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <p style={{ fontSize: 13, color: '#8899aa' }}>Subtotal</p>
+                <p style={{ fontSize: 13, color: '#e8edf5' }}>£{aSubtotal.toFixed(2)}</p>
+              </div>
+              {adminInvVat && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <p style={{ fontSize: 13, color: '#8899aa' }}>VAT (20%)</p>
+                  <p style={{ fontSize: 13, color: '#e8edf5' }}>£{aVat.toFixed(2)}</p>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ fontSize: 15, fontWeight: 600, color: '#e8edf5' }}>Total</p>
+                <p style={{ fontSize: 15, fontWeight: 600, color: '#4ade80', fontFamily: 'Georgia, serif' }}>£{aTotal.toFixed(2)}</p>
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>Notes (optional)</p>
+              <textarea placeholder="Payment terms, bank details…" value={adminInvNotes} onChange={e => setAdminInvNotes(e.target.value)} rows={2}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', fontSize: 13, outline: 'none', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ padding: '10px 16px 20px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+            {adminInvError && <p style={{ fontSize: 12, color: '#f87171', textAlign: 'center', margin: 0 }}>{adminInvError}</p>}
+            <button type="button" onClick={handleAdminCreateInvoice} disabled={adminInvSaving}
+              style={{ width: '100%', padding: '13px 0', background: adminInvSaving ? 'rgba(96,165,250,0.3)' : 'linear-gradient(135deg, #1a4a7a, #0f3460)', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 10, color: '#e8edf5', fontSize: 14, fontWeight: 500, cursor: adminInvSaving ? 'not-allowed' : 'pointer' }}>
+              {adminInvSaving ? 'Saving…' : 'Submit Invoice'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
         style={{ background: '#091422', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         <button type="button" onClick={onBack} className="w-8 h-8 flex items-center justify-center -ml-1 active:opacity-60">
@@ -4522,35 +5057,126 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
           )}
         </div>
 
-        {!loading && fullReq?.request_type === 'compliance' ? (
-          /* Compliance job — show submitted PDF */
-          <div>
-            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: fullReq.completion_document_url ? '#4ade80' : '#fbbf24', marginBottom: 8 }}>
-              Updated Certificate
-            </p>
-            {fullReq.completion_document_url ? (
-              <a
-                href={fullReq.completion_document_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '12px 14px', borderRadius: 10,
-                  background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)',
-                  color: '#4ade80', textDecoration: 'none',
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8zm0-4h8v2H8z"/>
-                </svg>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 500 }}>Certificate PDF</p>
-                  <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Submitted by contractor</p>
-                </div>
-              </a>
+        {/* Internal comments */}
+        <div>
+          <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 10 }}>
+            Internal Notes ({comments.length})
+          </p>
+          <div style={{ ...CARD }}>
+            {comments.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#8899aa', padding: '12px 16px' }}>No notes yet.</p>
             ) : (
-              <p style={{ fontSize: 12, color: '#8899aa' }}>Contractor has not yet uploaded the updated certificate.</p>
+              <div>
+                {comments.map((c, i) => (
+                  <div key={c.id}>
+                    <div style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                        <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#e8edf5', flexShrink: 0, fontWeight: 600 }}>
+                          {(c.author_name ?? 'A')[0].toUpperCase()}
+                        </div>
+                        <span style={{ fontSize: 11, color: '#e8edf5', fontWeight: 500 }}>{c.author_name ?? 'Admin'}</span>
+                        <span style={{ fontSize: 10, color: '#8899aa', marginLeft: 'auto' }}>{fmtDate(c.created_at)}</span>
+                      </div>
+                      <p style={{ fontSize: 13, color: '#c8d4e0', lineHeight: 1.55, paddingLeft: 32 }}>{c.body}</p>
+                    </div>
+                    {i < comments.length - 1 && <div style={DIVIDER} />}
+                  </div>
+                ))}
+              </div>
             )}
+            <div style={{ borderTop: comments.length > 0 ? '1px solid rgba(255,255,255,0.07)' : 'none', padding: '12px 16px' }}>
+              <form onSubmit={handleAddComment} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <textarea
+                  value={commentBody}
+                  onChange={e => { setCommentBody(e.target.value); setCommentError(null) }}
+                  placeholder="Add an internal note…"
+                  rows={2}
+                  style={{
+                    width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 6, padding: '8px 10px', fontSize: 13, color: '#e8edf5', resize: 'vertical',
+                    outline: 'none', lineHeight: 1.5,
+                  }}
+                />
+                {commentError && <p style={{ fontSize: 11, color: '#f87171', margin: 0 }}>{commentError}</p>}
+                <button
+                  type="submit"
+                  disabled={!commentBody.trim() || commentSaving}
+                  style={{
+                    alignSelf: 'flex-end', padding: '6px 16px', borderRadius: 6, fontSize: 11,
+                    letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                    background: commentBody.trim() && !commentSaving ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+                    color: commentBody.trim() && !commentSaving ? '#e8edf5' : '#8899aa',
+                    border: 'none', cursor: commentBody.trim() && !commentSaving ? 'pointer' : 'default',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  {commentSaving ? 'Saving…' : 'Add Note'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {!loading && fullReq?.request_type === 'compliance' ? (
+          /* Compliance job — template link + submitted PDF */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {fullReq.compliance_template_url && (
+              <div>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#60a5fa', marginBottom: 8 }}>
+                  Certificate Template
+                </p>
+                <a
+                  href={fullReq.compliance_template_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 14px', borderRadius: 10,
+                    background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.25)',
+                    color: '#60a5fa', textDecoration: 'none',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8zm0-4h8v2H8z"/>
+                  </svg>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 500 }}>View Template PDF</p>
+                    <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Provided for contractor reference</p>
+                  </div>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 'auto', flexShrink: 0, opacity: 0.5 }}>
+                    <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+                  </svg>
+                </a>
+              </div>
+            )}
+            <div>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: fullReq.completion_document_url ? '#4ade80' : '#fbbf24', marginBottom: 8 }}>
+                Updated Certificate
+              </p>
+              {fullReq.completion_document_url ? (
+                <a
+                  href={fullReq.completion_document_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 14px', borderRadius: 10,
+                    background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)',
+                    color: '#4ade80', textDecoration: 'none',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8zm0-4h8v2H8z"/>
+                  </svg>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 500 }}>Certificate PDF</p>
+                    <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Submitted by contractor</p>
+                  </div>
+                </a>
+              ) : (
+                <p style={{ fontSize: 12, color: '#8899aa' }}>Contractor has not yet uploaded the updated certificate.</p>
+              )}
+            </div>
           </div>
         ) : !loading && (
           <>
@@ -4665,9 +5291,18 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
         )}
 
         {/* Invoices */}
-        {!loading && invoices.length > 0 && (
+        {!loading && (
           <div style={{ ...CARD, padding: 16 }}>
-            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 12 }}>Invoices</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: invoices.length > 0 ? 12 : 0 }}>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', margin: 0 }}>Invoices ({invoices.length})</p>
+              <button
+                type="button"
+                onClick={() => setShowCreateInvoice(true)}
+                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, cursor: 'pointer' }}
+              >
+                + Create Invoice
+              </button>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {invoices.map(inv => {
                 const invStatusColor = inv.status === 'approved' ? '#4ade80' : inv.status === 'rejected' ? '#f87171' : inv.status === 'paid' ? '#a78bfa' : '#fbbf24'
@@ -4845,16 +5480,23 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   )
 }
 
+const PROP_STATUS_LABEL: Record<PropStatus, string> = {
+  tenanted: 'Tenanted',
+  notice:   'Handed in Notice',
+  viewings: 'Viewings',
+  for_let:  'Listed for Let',
+}
+
 const PROP_STATUS_STYLE: Record<PropStatus, React.CSSProperties> = {
-  active:   { background: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
-  vacant:   { background: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
+  tenanted: { background: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
+  notice:   { background: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
   viewings: { background: 'rgba(96,165,250,0.15)',  color: '#60a5fa' },
-  empty:    { background: 'rgba(136,153,170,0.12)', color: '#8899aa' },
+  for_let:  { background: 'rgba(136,153,170,0.12)', color: '#8899aa' },
 }
 
 function AdminPropertyCard({ property, onLinkTenant, onEdit, onView, onToggleListing }: { property: AdminPropRow; onLinkTenant: (id: string) => void; onEdit: (p: AdminPropRow) => void; onView: (p: AdminPropRow) => void; onToggleListing: (p: AdminPropRow) => void }) {
   const landlordName = property.profiles?.full_name ?? property.profiles?.email ?? 'Unknown landlord'
-  const statusKey = (property.status ?? 'vacant') as PropStatus
+  const statusKey = (property.status ?? 'for_let') as PropStatus
   const statusStyle = PROP_STATUS_STYLE[statusKey]
   const firstPhoto = property.photo_urls?.[0]
   return (
@@ -4870,8 +5512,8 @@ function AdminPropertyCard({ property, onLinkTenant, onEdit, onView, onToggleLis
             <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{property.address}</p>
             {property.postcode && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>{property.postcode}</p>}
           </div>
-          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', textTransform: 'capitalize', ...statusStyle }}>
-            {statusKey}
+          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>
+            {PROP_STATUS_LABEL[statusKey] ?? statusKey}
           </span>
         </div>
         {property.description && (
@@ -5303,7 +5945,7 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
   const [bedrooms, setBedrooms] = useState(property.bedrooms != null ? String(property.bedrooms) : '')
   const [rent, setRent] = useState(property.monthly_rent != null ? String(property.monthly_rent) : '')
   const [description, setDescription] = useState(property.description ?? '')
-  const [propStatus, setPropStatus] = useState<PropStatus>((property.status ?? 'vacant') as PropStatus)
+  const [propStatus, setPropStatus] = useState<PropStatus>((property.status ?? 'for_let') as PropStatus)
   const [landlordId, setLandlordId] = useState(property.landlord_id)
   const [photoUrls, setPhotoUrls] = useState<string[]>(property.photo_urls ?? [])
   const [hasGas, setHasGas] = useState(property.has_gas)
@@ -5348,7 +5990,7 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
       has_gas: hasGas,
       landlord_id: landlordId,
       status: propStatus as PropStatus,
-      is_active: propStatus === 'active',
+      is_active: propStatus === 'tenanted',
     }
     onSaved(patch)
     supabase.from('properties').update(patch).eq('id', property.id)
@@ -5395,13 +6037,13 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
           </FormField>
           <FormField label="Status">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-              {(['active', 'vacant', 'viewings', 'empty'] as PropStatus[]).map(s => (
+              {(['tenanted', 'notice', 'viewings', 'for_let'] as PropStatus[]).map(s => (
                 <button key={s} type="button" onClick={() => setPropStatus(s)}
-                  style={{ padding: '8px 0', borderRadius: 8, fontSize: 11, fontWeight: 500, textTransform: 'capitalize', border: '1px solid', cursor: 'pointer',
+                  style={{ padding: '8px 4px', borderRadius: 8, fontSize: 10, fontWeight: 500, border: '1px solid', cursor: 'pointer',
                     borderColor: propStatus === s ? PROP_STATUS_STYLE[s].color as string : 'rgba(255,255,255,0.1)',
                     background: propStatus === s ? PROP_STATUS_STYLE[s].background as string : 'rgba(255,255,255,0.04)',
                     color: propStatus === s ? PROP_STATUS_STYLE[s].color as string : '#8899aa' }}>
-                  {s}
+                  {PROP_STATUS_LABEL[s]}
                 </button>
               ))}
             </div>
