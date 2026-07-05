@@ -1774,7 +1774,7 @@ export default function AdminDashboard() {
           {/* Details */}
           <div style={{ padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {[
-              ['Status', (() => { const st = (selectedProperty.status ?? 'for_let') as PropStatus; const lbl = PROP_STATUS_LABEL[st] ?? st; return st === 'notice' && propertyTenancy?.end_date ? `${lbl} — vacating ${new Date(propertyTenancy.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : lbl })()],
+              ['Status', (() => { const st = (selectedProperty.status ?? 'for_let') as PropStatus; const lbl = PROP_STATUS_LABEL[st] ?? capFirst(st); return st === 'notice' && propertyTenancy?.end_date ? `${lbl} — vacating ${new Date(propertyTenancy.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : lbl })()],
               ['Type', selectedProperty.property_type ? selectedProperty.property_type.charAt(0).toUpperCase() + selectedProperty.property_type.slice(1) : '—'],
               ['Bedrooms', selectedProperty.bedrooms != null ? String(selectedProperty.bedrooms) : '—'],
               ['Rent PCM', selectedProperty.monthly_rent != null ? `£${selectedProperty.monthly_rent.toLocaleString()}` : '—'],
@@ -2506,7 +2506,7 @@ export default function AdminDashboard() {
                       ['Type', selectedProperty.property_type ? selectedProperty.property_type.charAt(0).toUpperCase() + selectedProperty.property_type.slice(1) : '—'],
                       ['Bedrooms', selectedProperty.bedrooms != null ? String(selectedProperty.bedrooms) : '—'],
                       ['Monthly Rent', selectedProperty.monthly_rent != null ? `£${Number(selectedProperty.monthly_rent).toLocaleString()}` : '—'],
-                      ['Status', PROP_STATUS_LABEL[(selectedProperty.status ?? 'for_let') as PropStatus] ?? (selectedProperty.status ?? 'for_let')],
+                      ['Status', PROP_STATUS_LABEL[(selectedProperty.status ?? 'for_let') as PropStatus] ?? capFirst(selectedProperty.status ?? 'for_let')],
                     ].map(([l, v]) => (
                       <div key={l}>
                         <p style={{ fontSize: 10, color: '#8899aa', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>{l}</p>
@@ -4351,7 +4351,7 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
                       <div style={{ padding: 14 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                           <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif', flex: 1, minWidth: 0 }} className="truncate">{p.address}</p>
-                          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>{PROP_STATUS_LABEL[statusKey] ?? statusKey}</span>
+                          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>{PROP_STATUS_LABEL[statusKey] ?? capFirst(statusKey)}</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, fontSize: 11, color: '#8899aa' }}>
                           {p.property_type && <span>{p.property_type.charAt(0).toUpperCase() + p.property_type.slice(1)}</span>}
@@ -5514,6 +5514,8 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   )
 }
 
+function capFirst(s: string) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s }
+
 const PROP_STATUS_LABEL: Record<PropStatus, string> = {
   tenanted: 'Tenanted',
   notice:   'Handed in Notice',
@@ -5547,7 +5549,7 @@ function AdminPropertyCard({ property, onLinkTenant, onEdit, onView, onToggleLis
             {property.postcode && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>{property.postcode}</p>}
           </div>
           <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>
-            {PROP_STATUS_LABEL[statusKey] ?? statusKey}
+            {PROP_STATUS_LABEL[statusKey] ?? capFirst(statusKey)}
           </span>
         </div>
         {property.description && (
