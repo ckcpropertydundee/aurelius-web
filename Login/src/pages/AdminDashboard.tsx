@@ -198,6 +198,7 @@ export default function AdminDashboard() {
 
   const [preCheckSaving, setPreCheckSaving] = useState(false)
   const [smokeSaving, setSmokeSaving] = useState(false)
+  const [gasToggleSaving, setGasToggleSaving] = useState(false)
   const [deletePropertyId, setDeletePropertyId] = useState<string | null>(null)
   const [deletePropertyAddress, setDeletePropertyAddress] = useState('')
   const [deletingProperty, setDeletingProperty] = useState(false)
@@ -1068,6 +1069,18 @@ export default function AdminDashboard() {
   }
 
 
+  async function handleGasToggle(hasGas: boolean) {
+    if (!selectedProperty) return
+    setGasToggleSaving(true)
+    const { error } = await supabase.from('properties').update({ has_gas: hasGas }).eq('id', selectedProperty.id)
+    if (!error) {
+      const updated = { ...selectedProperty, has_gas: hasGas }
+      setSelectedProperty(updated)
+      setAdminProps(prev => prev.map(p => p.id === selectedProperty.id ? updated : p))
+    }
+    setGasToggleSaving(false)
+  }
+
   async function handlePreTenancyCheck(completed: boolean) {
     if (!selectedProperty) return
     setPreCheckSaving(true)
@@ -1773,6 +1786,27 @@ export default function AdminDashboard() {
                 <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{val}</p>
               </div>
             ))}
+          </div>
+          {/* Heating toggle */}
+          <div style={{ margin: '0 16px 8px', ...CARD, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 4 }}>Heating</p>
+              <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>
+                {selectedProperty.has_gas ? 'Gas & Electric' : 'Electric Only'}
+              </p>
+              {!selectedProperty.has_gas && (
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>Gas Safety Certificate not required</p>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={gasToggleSaving}
+              onClick={() => handleGasToggle(!selectedProperty.has_gas)}
+              style={{ flexShrink: 0, marginLeft: 16, width: 44, height: 24, borderRadius: 12, border: 'none', cursor: gasToggleSaving ? 'not-allowed' : 'pointer', position: 'relative', transition: 'background 0.2s',
+                background: selectedProperty.has_gas ? '#4ade80' : 'rgba(255,255,255,0.12)' }}>
+              <span style={{ position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s',
+                left: selectedProperty.has_gas ? 23 : 3 }} />
+            </button>
           </div>
           {selectedProperty.description && (
             <div style={{ margin: '0 16px 8px', ...CARD, padding: '12px 14px' }}>
