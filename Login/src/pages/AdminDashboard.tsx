@@ -1685,13 +1685,10 @@ export default function AdminDashboard() {
           adminId={user?.id ?? ''}
           adminRole={user?.role ?? 'admin'}
           onClose={() => setMarkPaidItem(null)}
-          onSaved={(tenancyId, paymentId, paymentMethod, notes) => {
-            setRentCollection(prev => prev.map(r =>
-              r.tenancyId === tenancyId
-                ? { ...r, isPaid: true, collected: r.expected, paymentId, paymentMethod, paymentNotes: notes }
-                : r
-            ))
+          onSaved={() => {
             setMarkPaidItem(null)
+            setAnalyticsLoaded(false)
+            loadAnalytics()
           }}
         />
       )}
@@ -4045,7 +4042,7 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landl
   adminId: string
   adminRole: string
   onClose: () => void
-  onSaved: (tenancyId: string, paymentId: string, paymentMethod: string, notes: string) => void
+  onSaved: () => void
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const defaultDueDate = dueDate ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
@@ -4119,7 +4116,7 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landl
     }
 
     setSaving(false)
-    onSaved(tenancyId, finalPaymentId!, method, notes)
+    onSaved()
   }
 
   return (
