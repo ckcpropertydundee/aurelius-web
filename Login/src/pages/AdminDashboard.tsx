@@ -615,12 +615,14 @@ export default function AdminDashboard() {
       const monthEnd = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
       const ytdStart = `${now2.getFullYear()}-01-01`
 
-      const [propsRes, tenanciesForCollRes, paymentsRes, allPaymentsRes, thisMonthPaysRes, maintRes] = await Promise.all([
+      const [propsRes, tenanciesForCollRes, paymentsRes, allPaymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes] = await Promise.all([
         supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, profiles(full_name, email)'),
         supabase.from('tenancies').select('id, property_id, monthly_rent').eq('is_current', true),
         supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr),
         supabase.from('payments').select('amount, due_date').gte('due_date', cutoffStr),
         supabase.from('payments').select('id, tenancy_id, amount, due_date, paid_date, status, payment_method, notes').gte('due_date', monthStart).lte('due_date', monthEnd),
+        supabase.from('rent_payments').select('id, tenancy_id, amount, paid_at').in('status', ['succeeded', 'paid']).gte('paid_at', monthStart).lte('paid_at', monthEnd + 'T23:59:59'),
+        supabase.from('rent_payments').select('amount, paid_at').in('status', ['succeeded', 'paid']).not('paid_at', 'is', null).gte('paid_at', cutoffStr),
         supabase.from('maintenance_requests').select('cost, created_at').not('cost', 'is', null).gte('created_at', cutoffStr),
       ])
 
@@ -633,8 +635,10 @@ export default function AdminDashboard() {
       setMonthlyRentRoll(rentRoll)
       setTenantedCount(activeProps.length)
 
-      // YTD gross & net
-      const ytdGrossVal = (paymentsRes.data ?? []).filter(p => String(p.paid_date) >= ytdStart).reduce((s, p) => s + Number(p.amount ?? 0), 0)
+      // YTD gross & net — manual + Stripe
+      const ytdManual = (paymentsRes.data ?? []).filter(p => String(p.paid_date) >= ytdStart).reduce((s, p) => s + Number(p.amount ?? 0), 0)
+      const ytdStripe = (stripeHistoryRes.data ?? []).filter(p => String(p.paid_at) >= ytdStart).reduce((s, p) => s + Number(p.amount ?? 0), 0)
+      const ytdGrossVal = ytdManual + ytdStripe
       const ytdMaint = (maintRes.data ?? []).filter(m => String(m.created_at) >= ytdStart).reduce((s, m) => s + Number(m.cost ?? 0), 0)
       setYtdGross(ytdGrossVal)
       setYtdNet(ytdGrossVal - ytdMaint)
@@ -642,6 +646,7 @@ export default function AdminDashboard() {
       // Rent collection for current month — all properties
       const tenanciesForColl = (tenanciesForCollRes.data ?? []) as { id: string; property_id: string; monthly_rent: number | null }[]
       const thisMonthPays = (thisMonthPaysRes.data ?? []) as { id: string; tenancy_id: string; amount: number; due_date: string; paid_date: string | null; status: string | null; payment_method: string | null; notes: string | null }[]
+      const stripeThisMonth = (stripeThisMonthRes.data ?? []) as { id: string; tenancy_id: string; amount: number; paid_at: string }[]
       const tenancyByPropId: Record<string, { id: string; monthly_rent: number | null }> = {}
       for (const t of tenanciesForColl) tenancyByPropId[t.property_id] = t
       const collectionItems = [...allProps]
@@ -654,29 +659,36 @@ export default function AdminDashboard() {
           if (!isTenanted) {
             return { tenancyId: tenancy?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName }
           }
-          const payment = tenancy ? thisMonthPays.find(p => p.tenancy_id === tenancy.id) : undefined
+          const manualPay = tenancy ? thisMonthPays.find(p => p.tenancy_id === tenancy.id) : undefined
+          const stripePay  = tenancy ? stripeThisMonth.find(p => p.tenancy_id === tenancy.id) : undefined
+          const isPaid = !!(manualPay?.paid_date) || !!stripePay
+          const collected = manualPay?.paid_date ? Number(manualPay.amount) : (stripePay ? Number(stripePay.amount) : 0)
           return {
             tenancyId: tenancy?.id ?? '',
             propertyId: prop.id,
             address: prop.address,
             expected: Number(tenancy?.monthly_rent ?? prop.monthly_rent ?? 0),
-            collected: payment?.paid_date ? Number(payment.amount ?? 0) : 0,
-            isPaid: !!(payment?.paid_date),
+            collected,
+            isPaid,
             isVacant: false,
-            paymentId: payment?.id ?? null,
-            dueDate: payment?.due_date ?? null,
-            paymentMethod: payment?.payment_method ?? null,
-            paymentNotes: payment?.notes ?? null,
+            paymentId: manualPay?.id ?? null,
+            dueDate: manualPay?.due_date ?? null,
+            paymentMethod: stripePay ? 'Stripe (online)' : (manualPay?.payment_method ?? null),
+            paymentNotes: manualPay?.notes ?? null,
             landlordEmail,
             landlordName,
           }
         })
       setRentCollection(collectionItems)
 
-      // Actual payments received, grouped by month (by paid_date)
+      // Actual payments received, grouped by month — manual (paid_date) + Stripe (paid_at)
       const payByMonth: Record<string, number> = {}
       for (const pay of paymentsRes.data ?? []) {
         const key = String(pay.paid_date).slice(0, 7)
+        payByMonth[key] = (payByMonth[key] ?? 0) + Number(pay.amount ?? 0)
+      }
+      for (const pay of stripeHistoryRes.data ?? []) {
+        const key = String(pay.paid_at).slice(0, 7)
         payByMonth[key] = (payByMonth[key] ?? 0) + Number(pay.amount ?? 0)
       }
 
