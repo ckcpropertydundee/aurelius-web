@@ -36,8 +36,8 @@ interface MaintenanceRow { id: string; title: string | null; description: string
 type MaintenanceFilter = 'all' | 'open' | 'in_progress' | 'resolved' | 'compliance' | 'viewings'
 interface ViewingRequest { id: string; property_id: string | null; name: string; email: string; phone: string | null; preferred_date: string; preferred_time: string; message: string | null; status: string; created_at: string; properties: { address: string } | null }
 interface ComplianceAlert { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; document_url: string | null; notes: string | null; properties: { address: string } | null }
-type PropStatus = 'tenanted' | 'notice' | 'viewings' | 'for_let'
-interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; profiles: { full_name: string | null; email: string } | null }
+type PropStatus = 'active' | 'tenanted' | 'notice' | 'viewings' | 'for_let' | 'vacant'
+interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; profiles: { full_name: string | null; email: string } | null; purchase_price?: number | null }
 interface ComplianceItem { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; status: string | null; document_url: string | null; notes: string | null }
 interface PropertyTenancyInfo { id: string; tenant_id: string; tenant_name: string | null; tenant_email: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null }
 interface AuditEvent { id: string; ts: string; cat: 'maintenance' | 'payment' | 'tenancy' | 'compliance' | 'viewing'; title: string; detail?: string; ok?: boolean; documentUrl?: string }
@@ -46,7 +46,7 @@ interface KeyEvent { id: string; property_id: string; key_type: string; action: 
 type MeterType = 'gas' | 'electricity'
 interface MeterReading { id: string; property_id: string; meter_type: MeterType; reading: number; reading_date: string; notes: string | null; created_at: string }
 interface LandlordRegistration { id: string; landlord_id: string; registration_number: string; council_area: string | null; expiry_date: string | null }
-interface AuditLogRow { id: string; action: string; entity_type: string | null; entity_id: string | null; metadata: Record<string, unknown> | null; created_at: string; user_id: string | null; user_role: string | null }
+interface AuditLogRow { id: string; action: string; entity_type: string | null; entity_id: string | null; metadata: Record<string, unknown> | null; created_at: string; user_id: string | null; user_role: string | null; user_name: string | null; user_email: string | null }
 type JobStatus = 'pending' | 'in_progress' | 'done' | 'cancelled'
 type JobPriority = 'critical' | 'high' | 'medium' | 'low'
 type JobType = 'notice_received' | 'pre_checkout_inspection' | 'checkout_inspection' | 'deposit_assessment' | 'cleaning' | 'repairs' | 'photography' | 'relisting' | 'viewings_ongoing' | 'referencing' | 'tenant_onboarding' | 'maintenance' | 'custom'
@@ -155,6 +155,7 @@ export default function AdminDashboard() {
   const [adminProps, setAdminProps] = useState<AdminPropRow[]>([])
   const [adminPropsLoading, setAdminPropsLoading] = useState(false)
   const [adminPropsLoaded, setAdminPropsLoaded] = useState(false)
+  const [adminPropsError, setAdminPropsError] = useState<string | null>(null)
   const [propSearch, setPropSearch] = useState('')
   const [propSort, setPropSort] = useState<'newest' | 'oldest' | 'az' | 'za' | 'rent_high' | 'rent_low'>('newest')
   const [propStatusFilter, setPropStatusFilter] = useState<PropStatus | 'all' | 'listed'>('all')
@@ -376,7 +377,8 @@ export default function AdminDashboard() {
 
   async function handleEndTenancy(tenancyId: string) {
     const today = new Date().toISOString().slice(0, 10)
-    await supabase.from('tenancies').update({ is_current: false, end_date: today }).eq('id', tenancyId)
+    const { error } = await supabase.from('tenancies').update({ is_current: false, end_date: today }).eq('id', tenancyId)
+    if (error) { console.error('End tenancy failed:', error); return }
     if (selectedProperty) {
       await supabase.from('compliance_items')
         .update({ expiry_date: today })
@@ -387,7 +389,8 @@ export default function AdminDashboard() {
         c.type === 'Inventory' && !c.expiry_date ? { ...c, expiry_date: today } : c
       ))
     }
-    setPropertyTenancy(null)
+    setPropertyTenancies(prev => prev.filter(t => t.id !== tenancyId))
+    setPropertyTenancy(prev => prev?.id === tenancyId ? null : prev)
   }
 
   async function handlePRTFileUpload(file: File) {
@@ -625,7 +628,7 @@ export default function AdminDashboard() {
       setPropertyCount(allProps.length)
 
       // Rent roll and tenanted count driven by property status (source of truth from the app)
-      const activeProps = allProps.filter(p => p.status === 'tenanted')
+      const activeProps = allProps.filter(p => p.status === 'active' || p.status === 'tenanted')
       const rentRoll = activeProps.reduce((s, p) => s + Number(p.monthly_rent ?? 0), 0)
       setMonthlyRentRoll(rentRoll)
       setTenantedCount(activeProps.length)
@@ -645,7 +648,7 @@ export default function AdminDashboard() {
         .sort((a, b) => a.address.localeCompare(b.address))
         .map(prop => {
           const tenancy = tenancyByPropId[prop.id]
-          const isTenanted = !!tenancy && prop.status === 'tenanted'
+          const isTenanted = !!tenancy && (prop.status === 'active' || prop.status === 'tenanted')
           const landlordEmail = prop.profiles?.[0]?.email ?? ''
           const landlordName = prop.profiles?.[0]?.full_name ?? ''
           if (!isTenanted) {
@@ -755,8 +758,17 @@ export default function AdminDashboard() {
 
   async function loadAdminProps() {
     setAdminPropsLoading(true)
-    const { data } = await supabase.from('properties').select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, profiles(full_name, email)').order('created_at', { ascending: false })
-    setAdminProps((data ?? []) as unknown as AdminPropRow[]); setAdminPropsLoaded(true); setAdminPropsLoading(false)
+    setAdminPropsError(null)
+    const { data, error } = await supabase.from('properties').select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, profiles(full_name, email)').order('created_at', { ascending: false })
+    if (error) {
+      console.error('[AdminDashboard] loadAdminProps error:', error)
+      setAdminPropsError(error.message)
+      setAdminPropsLoading(false)
+      return
+    }
+    setAdminProps((data ?? []) as unknown as AdminPropRow[])
+    setAdminPropsLoaded(true)
+    setAdminPropsLoading(false)
   }
 
   async function loadMaintenance() {
@@ -959,7 +971,18 @@ export default function AdminDashboard() {
     if (auditLogsActionFilter !== 'all') q = q.eq('action', auditLogsActionFilter)
     if (auditLogsRoleFilter !== 'all') q = q.eq('user_role', auditLogsRoleFilter)
     const { data } = await q
-    const rows = (data ?? []) as AuditLogRow[]
+    const rawRows = (data ?? []) as Omit<AuditLogRow, 'user_name' | 'user_email'>[]
+    const userIds = [...new Set(rawRows.map(r => r.user_id).filter(Boolean))] as string[]
+    const profileMap: Record<string, { full_name: string | null; email: string }> = {}
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds)
+      for (const p of profiles ?? []) profileMap[p.id] = p
+    }
+    const rows: AuditLogRow[] = rawRows.map(r => ({
+      ...r,
+      user_name: r.user_id ? (profileMap[r.user_id]?.full_name ?? null) : null,
+      user_email: r.user_id ? (profileMap[r.user_id]?.email ?? null) : null,
+    }))
     if (replace) setAuditLogs(rows)
     else setAuditLogs(prev => [...prev, ...rows])
     setAuditLogsHasMore(rows.length === PAGE_SIZE)
@@ -988,7 +1011,7 @@ export default function AdminDashboard() {
   }
 
   async function loadTenantUsers() {
-    const { data } = await supabase.from('users').select('id, email, full_name').eq('role', 'tenant').order('full_name')
+    const { data } = await supabase.from('profiles').select('id, email, full_name').eq('role', 'tenant').order('full_name')
     setTenantUsers((data ?? []) as { id: string; email: string; full_name: string | null }[])
   }
 
@@ -1263,7 +1286,11 @@ export default function AdminDashboard() {
   const filteredMaintenance = maintenanceItems.filter((m) => maintenanceFilter === 'all' ? true : m.status === maintenanceFilter)
   const filteredAdminProps = adminProps.filter((p) => {
     if (propStatusFilter === 'listed') { if (!p.is_listed) return false }
-    else if (propStatusFilter !== 'all' && (p.status ?? 'for_let') !== propStatusFilter) return false
+    else if (propStatusFilter !== 'all') {
+      const isTenantedFilter = propStatusFilter === 'tenanted'
+      if (isTenantedFilter) { if (p.status !== 'tenanted' && p.status !== 'active') return false }
+      else if (p.status !== propStatusFilter) return false
+    }
     if (!propSearch) return true
     const q = propSearch.toLowerCase()
     return p.address.toLowerCase().includes(q) || (p.postcode ?? '').toLowerCase().includes(q) || (p.profiles?.full_name ?? '').toLowerCase().includes(q) || (p.profiles?.email ?? '').toLowerCase().includes(q)
@@ -2205,18 +2232,29 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          {/* PRT Agreement — only shown when an active tenancy exists */}
-          {(propertyTenancies.length > 0 || prtDoc) && (
+          {/* PRT Agreement */}
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>PRT Agreement</p>
-              <button type="button" onClick={() => setShowAddPRTModal(true)}
-                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                + {prtDoc ? 'Replace' : 'Add'}
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {propertyTenancies.length === 0 && (
+                  <button type="button" onClick={() => openLinkTenantModal(selectedProperty.id)}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)', cursor: 'pointer' }}>
+                    + Create Tenancy
+                  </button>
+                )}
+                {(propertyTenancies.length > 0 || prtDoc) && (
+                  <button type="button" onClick={() => setShowAddPRTModal(true)}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
+                    + {prtDoc ? 'Replace' : 'Add'}
+                  </button>
+                )}
+              </div>
             </div>
             {prtLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>Loading…</p>
+            ) : propertyTenancies.length === 0 && !prtDoc ? (
+              <p style={{ fontSize: 12, color: '#8899aa' }}>No active tenancy. Use "+ Create Tenancy" to register one.</p>
             ) : prtDoc ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -2244,7 +2282,6 @@ export default function AdminDashboard() {
               <p style={{ fontSize: 12, color: '#f87171' }}>No PRT agreement registered. Use "+ Add" to record one.</p>
             )}
           </div>
-          )}
 
           {/* Pre-tenancy Repairing Standard check */}
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '14px' }}>
@@ -3219,13 +3256,14 @@ export default function AdminDashboard() {
             {([
               { key: 'all',      label: 'All',      style: { background: 'rgba(255,255,255,0.06)', color: '#8899aa' } },
               { key: 'tenanted',  label: 'Tenanted',          style: PROP_STATUS_STYLE.tenanted },
-              { key: 'notice',    label: 'Handed in Notice',  style: PROP_STATUS_STYLE.notice },
+              { key: 'notice',    label: 'Notice',            style: PROP_STATUS_STYLE.notice },
               { key: 'viewings',  label: 'Viewings',          style: PROP_STATUS_STYLE.viewings },
-              { key: 'for_let',   label: 'Listed for Let',    style: PROP_STATUS_STYLE.for_let },
+              { key: 'vacant',    label: 'Vacant',            style: PROP_STATUS_STYLE.vacant },
+              { key: 'for_let',   label: 'For Let',           style: PROP_STATUS_STYLE.for_let },
               { key: 'listed',    label: 'Has Listing',       style: { background: 'rgba(74,222,128,0.12)', color: '#4ade80' } },
             ] as { key: PropStatus | 'all' | 'listed'; label: string; style: React.CSSProperties }[]).map(({ key, label, style }) => {
               const isActive = propStatusFilter === key
-              const count = key === 'all' ? null : key === 'listed' ? adminProps.filter(p => p.is_listed).length : adminProps.filter(p => (p.status ?? 'for_let') === key).length
+              const count = key === 'all' ? null : key === 'listed' ? adminProps.filter(p => p.is_listed).length : key === 'tenanted' ? adminProps.filter(p => p.status === 'tenanted' || p.status === 'active').length : adminProps.filter(p => p.status === key).length
               return (
                 <button key={key} type="button" onClick={() => setPropStatusFilter(key)}
                   className="flex-shrink-0 px-3 py-1 rounded-full text-[11px] font-medium"
@@ -3258,8 +3296,17 @@ export default function AdminDashboard() {
           <div className="px-4 py-4 flex flex-col gap-3">
             {adminPropsLoading ? (
               [...Array(4)].map((_, i) => <div key={i} style={{ ...CARD, height: 96, opacity: 0.4 }} className="animate-pulse" />)
+            ) : adminPropsError ? (
+              <div style={{ ...CARD, padding: 20, textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: '#f87171', marginBottom: 8 }}>Failed to load properties</p>
+                <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 12 }}>{adminPropsError}</p>
+                <button type="button" onClick={() => { setAdminPropsLoaded(false); setAdminPropsError(null); loadAdminProps() }}
+                  style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, background: 'rgba(255,255,255,0.08)', color: '#e8edf5', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer' }}>
+                  Retry
+                </button>
+              </div>
             ) : filteredAdminProps.length === 0 ? (
-              <EmptyState icon={<IconHouse />} title={propSearch ? 'No results' : 'No properties'} subtitle={propSearch ? 'Try a different search term' : 'Properties will appear here once added'} />
+              <EmptyState icon={<IconHouse />} title={propSearch || propStatusFilter !== 'all' ? 'No results' : 'No properties'} subtitle={propSearch || propStatusFilter !== 'all' ? 'Try a different search term or filter' : 'Properties will appear here once added'} />
             ) : (
               filteredAdminProps.map((p) => <AdminPropertyCard key={p.id} property={p} onLinkTenant={openLinkTenantModal} onEdit={openEditPropertyModal} onView={setSelectedProperty} onToggleListing={quickToggleListing} />)
             )}
@@ -3378,7 +3425,7 @@ export default function AdminDashboard() {
                   const label = isExpired ? 'Expired' : daysUntil === 0 ? 'Today' : daysUntil != null ? `${daysUntil}d` : '—'
                   const addr = (item.properties as unknown as { address: string } | null)?.address ?? 'Unknown property'
                   return (
-                    <div key={item.id} style={{ ...CARD, padding: 14 }}>
+                    <div key={item.id} style={{ ...CARD, padding: 14, cursor: 'pointer' }} onClick={() => setSelectedComplianceAlert(item)}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{item.type}</p>
@@ -3387,10 +3434,7 @@ export default function AdminDashboard() {
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
                           <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 4, background: bg, color }}>{label}</span>
-                          <button type="button" onClick={() => setSelectedComplianceAlert(item)}
-                            style={{ fontSize: 11, color: '#60a5fa', padding: '2px 10px', borderRadius: 4, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                            View
-                          </button>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="#8899aa"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
                         </div>
                       </div>
                     </div>
@@ -3485,7 +3529,7 @@ export default function AdminDashboard() {
                     return { background: 'rgba(136,153,170,0.12)', color: '#8899aa' }
                   })()
                   const actionLabel = (log.action ?? '').replace(/_/g, ' ')
-                  const hasMetadata = log.metadata && Object.keys(log.metadata).length > 0
+                  const hasMetadata = !!(log.user_id || log.user_role)
                   return (
                     <div key={log.id}>
                       <div
@@ -3508,10 +3552,27 @@ export default function AdminDashboard() {
                               </span>
                             )}
                           </div>
-                          {isExpanded && hasMetadata && (
-                            <pre style={{ marginTop: 8, fontSize: 10, color: '#8899aa', background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: '8px 10px', overflow: 'auto', maxHeight: 180, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                              {JSON.stringify(log.metadata, null, 2)}
-                            </pre>
+                          {isExpanded && (
+                            <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {(log.user_name || log.user_email) && (
+                                <p style={{ fontSize: 11, color: '#8899aa' }}>
+                                  <span style={{ color: 'rgba(136,153,170,0.6)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Created by </span>
+                                  <span style={{ color: '#e8edf5' }}>{log.user_name ?? log.user_email}</span>
+                                  {log.user_name && log.user_email && (
+                                    <span style={{ color: 'rgba(136,153,170,0.7)' }}> · {log.user_email}</span>
+                                  )}
+                                </p>
+                              )}
+                              {!log.user_name && !log.user_email && log.user_role === 'system' && (
+                                <p style={{ fontSize: 11, color: '#8899aa' }}>
+                                  <span style={{ color: 'rgba(136,153,170,0.6)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Created by </span>
+                                  <span style={{ color: '#4ade80' }}>System</span>
+                                </p>
+                              )}
+                              {!log.user_name && !log.user_email && !log.user_role && (
+                                <p style={{ fontSize: 11, color: 'rgba(136,153,170,0.5)' }}>No user information recorded</p>
+                              )}
+                            </div>
                           )}
                         </div>
                         <div style={{ flexShrink: 0, textAlign: 'right' }}>
@@ -4120,17 +4181,20 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
     if (!rent) { setError('Monthly rent is required'); return }
     if (linkedIds.has(tenantId)) { setError('This tenant is already linked to this property'); return }
     setSaving(true); setError(null)
+    const monthlyRent = parseFloat(rent)
     const { error: dbError } = await supabase.from('tenancies').insert({
       property_id: property.id,
       tenant_id: tenantId,
       start_date: startDate,
-      monthly_rent: parseFloat(rent),
+      monthly_rent: monthlyRent,
       deposit: deposit ? parseFloat(deposit) : 0,
       status: 'active',
       is_current: true,
     })
+    if (dbError) { setSaving(false); setError(dbError.message); return }
+    // Keep properties.monthly_rent in sync so the landlord dashboard reflects the new rent immediately
+    await supabase.from('properties').update({ monthly_rent: monthlyRent }).eq('id', property.id)
     setSaving(false)
-    if (dbError) { setError(dbError.message); return }
     onSaved(); onClose()
   }
 
@@ -4278,34 +4342,68 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
   onViewProperty: () => void
   onJobCreated?: () => void
 }) {
+  type ContractorOpt = { id: string; business_name: string | null; full_name: string | null; email: string }
+  const CERT_TYPES = [
+    'Gas Safety Certificate',
+    'Electrical Installation Condition Report (EICR)',
+    'Energy Performance Certificate (EPC)',
+    'PAT Testing',
+    'Legionella Risk Assessment',
+    'Fire Safety Check',
+    'Portable Appliance Testing',
+    'Other',
+  ]
+
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [created, setCreated] = useState(false)
-  const [templateUrl, setTemplateUrl] = useState('')
+  const [contractors, setContractors] = useState<ContractorOpt[]>([])
+  const [contractorsLoading, setContractorsLoading] = useState(true)
+  const [contractorId, setContractorId] = useState('')
+  const [certType, setCertType] = useState(item.type)
+  const [notes, setNotes] = useState('')
+
+  useEffect(() => {
+    async function loadContractors() {
+      const { data: rows } = await supabase.from('contractors').select('id, business_name, user_id').order('business_name', { nullsFirst: false })
+      const typed = (rows ?? []) as { id: string; business_name: string | null; user_id: string | null }[]
+      const userIds = typed.map(r => r.user_id).filter((id): id is string => !!id)
+      let nameMap: Record<string, { full_name: string | null; email: string }> = {}
+      if (userIds.length > 0) {
+        const { data: users } = await supabase.from('users').select('id, full_name, email').in('id', userIds)
+        for (const u of (users ?? []) as { id: string; full_name: string | null; email: string }[]) nameMap[u.id] = u
+      }
+      setContractors(typed.map(r => ({ id: r.id, business_name: r.business_name, full_name: r.user_id ? (nameMap[r.user_id]?.full_name ?? null) : null, email: r.user_id ? (nameMap[r.user_id]?.email ?? '') : '' })))
+      setContractorsLoading(false)
+    }
+    loadContractors()
+  }, [])
 
   async function handleCreateJob() {
+    if (!contractorId) { setCreateError('Please select a contractor'); return }
     setCreating(true)
     setCreateError(null)
     try {
       const isExpiredLocal = expiry && Math.ceil((expiry.getTime() - Date.now()) / 86400000) < 0
       const isUrgentLocal = expiry && !isExpiredLocal && Math.ceil((expiry.getTime() - Date.now()) / 86400000) < 30
       const priority = isExpiredLocal ? 'high' : isUrgentLocal ? 'medium' : 'low'
+      const title = `${certType} renewal`
+      const description = [
+        `Certificate expired: ${item.expiry_date ?? 'unknown'}. Upload updated certificate.`,
+        notes.trim() ? `\nAdditional details: ${notes.trim()}` : '',
+      ].join('')
       const { error } = await supabase.from('maintenance_requests').insert({
         property_id: item.property_id,
-        title: `${item.type} renewal`,
-        description: `Certificate expired: ${item.expiry_date ?? 'unknown'}. Upload updated certificate.`,
+        title,
+        description,
         priority,
-        status: 'open',
+        status: 'assigned',
         request_type: 'compliance',
-        ...(templateUrl.trim() ? { compliance_template_url: templateUrl.trim() } : {}),
+        assigned_contractor_id: contractorId,
       })
       if (error) throw error
-      // Best-effort notification — don't await, don't block the UI
       supabase.functions.invoke('send-notification-email', {
-        body: {
-          event: 'maintenance_request',
-          data: { property_id: item.property_id, title: `${item.type} renewal`, description: `Certificate expired: ${item.expiry_date ?? 'unknown'}.`, priority },
-        },
+        body: { event: 'maintenance_request', data: { property_id: item.property_id, title, description, priority } },
       }).catch(() => {})
       setCreated(true)
       onJobCreated?.()
@@ -4381,33 +4479,50 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
           )}
           {created ? (
             <div style={{ padding: '13px 0', borderRadius: 10, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', textAlign: 'center' }}>
-              <p style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>Job created — assign a contractor from Maintenance</p>
+              <p style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>Job assigned — contractor can now see it in their account</p>
             </div>
           ) : (
-            <>
-              {/* Template PDF URL */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Create Job for Contractor</p>
+
+              {/* Contractor */}
               <div>
-                <p style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>
-                  Template PDF Link <span style={{ opacity: 0.6 }}>(optional)</span>
-                </p>
-                <input
-                  type="url"
-                  value={templateUrl}
-                  onChange={e => setTemplateUrl(e.target.value)}
-                  placeholder="Paste link to certificate template for contractor…"
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: 8,
-                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#e8edf5', fontSize: 13, outline: 'none',
-                  }}
-                />
+                <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 5 }}>Contractor *</p>
+                {contractorsLoading ? (
+                  <p style={{ fontSize: 12, color: '#8899aa' }}>Loading contractors…</p>
+                ) : (
+                  <select value={contractorId} onChange={e => setContractorId(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: contractorId ? '#e8edf5' : '#8899aa', fontSize: 13, outline: 'none' }}>
+                    <option value="">Select contractor…</option>
+                    {contractors.map(c => (
+                      <option key={c.id} value={c.id}>{c.business_name ?? c.full_name ?? c.email}</option>
+                    ))}
+                  </select>
+                )}
               </div>
-              <button type="button" onClick={handleCreateJob} disabled={creating}
-                style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: creating ? 'rgba(251,191,36,0.1)' : 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 14, fontWeight: 500, opacity: creating ? 0.6 : 1 }}>
-                {creating ? 'Creating…' : 'Create Job for Contractor'}
+
+              {/* Certificate type */}
+              <div>
+                <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 5 }}>Certificate Required</p>
+                <select value={certType} onChange={e => setCertType(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none' }}>
+                  {CERT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  {!CERT_TYPES.includes(certType) && <option value={certType}>{certType}</option>}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 5 }}>Additional Details <span style={{ opacity: 0.6 }}>(optional)</span></p>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+                  placeholder="Any specific instructions or access details for the contractor…"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', resize: 'none', fontFamily: 'inherit' }} />
+              </div>
+
+              {createError && <p style={{ fontSize: 12, color: '#f87171' }}>{createError}</p>}
+              <button type="button" onClick={handleCreateJob} disabled={creating || contractorsLoading}
+                style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: creating ? 'rgba(251,191,36,0.1)' : 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 14, fontWeight: 500, opacity: (creating || contractorsLoading) ? 0.6 : 1 }}>
+                {creating ? 'Assigning…' : 'Assign Job to Contractor'}
               </button>
-              {createError && <p style={{ fontSize: 12, color: '#f87171', textAlign: 'center' }}>{createError}</p>}
-            </>
+            </div>
           )}
           <button type="button" onClick={onViewProperty}
             style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 14, fontWeight: 500 }}>
@@ -5893,17 +6008,21 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
 function capFirst(s: string) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s }
 
 const PROP_STATUS_LABEL: Record<PropStatus, string> = {
+  active:   'Tenanted',
   tenanted: 'Tenanted',
   notice:   'Handed in Notice',
   viewings: 'Viewings',
   for_let:  'Listed for Let',
+  vacant:   'Vacant',
 }
 
 const PROP_STATUS_STYLE: Record<PropStatus, React.CSSProperties> = {
+  active:   { background: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
   tenanted: { background: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
   notice:   { background: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
   viewings: { background: 'rgba(96,165,250,0.15)',  color: '#60a5fa' },
   for_let:  { background: 'rgba(136,153,170,0.12)', color: '#8899aa' },
+  vacant:   { background: 'rgba(248,113,113,0.12)', color: '#f87171' },
 }
 
 function AdminPropertyCard({ property, onLinkTenant, onEdit, onView, onToggleListing }: { property: AdminPropRow; onLinkTenant: (id: string) => void; onEdit: (p: AdminPropRow) => void; onView: (p: AdminPropRow) => void; onToggleListing: (p: AdminPropRow) => void }) {
@@ -6401,8 +6520,8 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
       photo_urls: photoUrls,
       has_gas: hasGas,
       landlord_id: landlordId,
-      status: propStatus as PropStatus,
-      is_active: propStatus === 'tenanted',
+      status: (propStatus === 'tenanted' ? 'active' : propStatus) as PropStatus,
+      is_active: propStatus === 'tenanted' || propStatus === 'active' || propStatus === 'notice',
     }
     onSaved(patch)
     supabase.from('properties').update(patch).eq('id', property.id)
@@ -6448,8 +6567,8 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
               style={{ ...INPUT_STYLE, resize: 'vertical', lineHeight: 1.5 }} />
           </FormField>
           <FormField label="Status">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-              {(['tenanted', 'notice', 'viewings', 'for_let'] as PropStatus[]).map(s => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+              {(['tenanted', 'notice', 'viewings', 'vacant', 'for_let'] as PropStatus[]).map(s => (
                 <button key={s} type="button" onClick={() => setPropStatus(s)}
                   style={{ padding: '8px 4px', borderRadius: 8, fontSize: 10, fontWeight: 500, border: '1px solid', cursor: 'pointer',
                     borderColor: propStatus === s ? PROP_STATUS_STYLE[s].color as string : 'rgba(255,255,255,0.1)',
