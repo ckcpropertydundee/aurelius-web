@@ -648,18 +648,18 @@ export default function AdminDashboard() {
         .sort((a, b) => a.address.localeCompare(b.address))
         .map(prop => {
           const tenancy = tenancyByPropId[prop.id]
-          const isTenanted = !!tenancy && (prop.status === 'active' || prop.status === 'tenanted')
+          const isTenanted = prop.status === 'active' || prop.status === 'tenanted'
           const landlordEmail = prop.profiles?.[0]?.email ?? ''
           const landlordName = prop.profiles?.[0]?.full_name ?? ''
           if (!isTenanted) {
             return { tenancyId: tenancy?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName }
           }
-          const payment = thisMonthPays.find(p => p.tenancy_id === tenancy.id)
+          const payment = tenancy ? thisMonthPays.find(p => p.tenancy_id === tenancy.id) : undefined
           return {
-            tenancyId: tenancy.id,
+            tenancyId: tenancy?.id ?? '',
             propertyId: prop.id,
             address: prop.address,
-            expected: Number(tenancy.monthly_rent ?? prop.monthly_rent ?? 0),
+            expected: Number(tenancy?.monthly_rent ?? prop.monthly_rent ?? 0),
             collected: payment?.paid_date ? Number(payment.amount ?? 0) : 0,
             isPaid: !!(payment?.paid_date),
             isVacant: false,
