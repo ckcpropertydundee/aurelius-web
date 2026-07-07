@@ -33,7 +33,7 @@ interface UserRow { id: string; email: string; full_name: string | null; role: s
 type UserRoleFilter = 'all' | 'admin' | 'landlord' | 'tenant' | 'contractor'
 interface StaffMember { id: string; full_name: string; email: string; role: 'admin' | 'master admin'; status: string | null }
 type StaffRoleFilter = 'all' | 'admin' | 'master admin'
-interface MaintenanceRow { id: string; title: string | null; description: string | null; priority: string | null; status: string | null; created_at: string | null; property_id: string | null }
+interface MaintenanceRow { id: string; title: string | null; description: string | null; priority: string | null; status: string | null; created_at: string | null; property_id: string | null; scheduled_at?: string | null }
 type MaintenanceFilter = 'all' | 'open' | 'in_progress' | 'resolved' | 'compliance' | 'viewings'
 interface ViewingRequest { id: string; property_id: string | null; name: string; email: string; phone: string | null; preferred_date: string; preferred_time: string; message: string | null; status: string; created_at: string; properties: { address: string } | null }
 interface TenancyNotice { id: string; tenancy_id: string; tenant_id: string; property_id: string; notice_date: string; vacate_date: string; status: string; created_at: string; properties: { address: string } | null; profiles: { full_name: string | null; email: string } | null }
@@ -5292,7 +5292,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   onUpdate?: (id: string, updates: Partial<MaintenanceRow>) => void
 }) {
   type HistEntry = { id: string; old_status: string | null; new_status: string | null; notes: string | null; created_at: string }
-  type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null; compliance_template_url: string | null }
+  type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null; compliance_template_url: string | null; scheduled_at: string | null }
   type ContractorOption = { id: string; business_name: string | null; full_name: string | null; email: string }
   type InvoiceRow = { id: string; invoice_number: string; total: number; status: string; description: string | null; created_at: string; deduction_queued: boolean }
   type CommentRow = { id: string; author_id: string | null; author_name: string | null; body: string; created_at: string }
@@ -5320,6 +5320,16 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   const [contractorsLoading, setContractorsLoading] = useState(false)
   const [contractorsError, setContractorsError] = useState<string | null>(null)
 
+  // Scheduled visit
+  const [localScheduledAt, setLocalScheduledAt] = useState<string | null>(null)
+  const [schedDate, setSchedDate] = useState('')
+  const [schedTime, setSchedTime] = useState('')
+  const [schedSaving, setSchedSaving] = useState(false)
+
+  // Priority
+  const [localPriority, setLocalPriority] = useState<string | null>(request.priority ?? null)
+  const [prioritySaving, setPrioritySaving] = useState(false)
+
   // Admin create-invoice state
   type AdminLineItem = { key: string; description: string; quantity: string; unit_price: string }
   const newAdminLine = (): AdminLineItem => ({ key: String(Date.now() + Math.random()), description: '', quantity: '1', unit_price: '' })
@@ -5337,7 +5347,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
     async function load() {
       const [reqRes, histRes, invRes, commRes] = await Promise.all([
         supabase.from('maintenance_requests')
-          .select('tenant_id, tenancy_id, assigned_contractor_id, updated_at, resolved_at, photo_urls, completion_photo_urls, completion_document_url, request_type, cost, compliance_template_url')
+          .select('tenant_id, tenancy_id, assigned_contractor_id, updated_at, resolved_at, photo_urls, completion_photo_urls, completion_document_url, request_type, cost, compliance_template_url, scheduled_at')
           .eq('id', request.id).maybeSingle(),
         supabase.from('maintenance_status_history')
           .select('id, old_status, new_status, notes, created_at')
@@ -5354,6 +5364,12 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
       ])
       const full = (reqRes.data as FullRequest | null)
       setFullReq(full)
+      if (full?.scheduled_at) {
+        setLocalScheduledAt(full.scheduled_at)
+        const d = new Date(full.scheduled_at)
+        setSchedDate(d.toISOString().slice(0, 10))
+        setSchedTime(d.toTimeString().slice(0, 5))
+      }
       setHistory((histRes.data ?? []) as HistEntry[])
       setInvoices((invRes.data ?? []) as InvoiceRow[])
       setComments((commRes.data ?? []) as CommentRow[])
@@ -5709,6 +5725,38 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
       setActionError('Failed to record cost.')
     } finally {
       setCostSaving(false)
+    }
+  }
+
+  async function handleSetScheduledAt() {
+    if (!schedDate || !schedTime) return
+    setSchedSaving(true)
+    try {
+      const iso = new Date(`${schedDate}T${schedTime}:00`).toISOString()
+      const { error } = await supabase.from('maintenance_requests').update({ scheduled_at: iso }).eq('id', request.id)
+      if (error) throw error
+      setLocalScheduledAt(iso)
+      setFullReq(prev => prev ? { ...prev, scheduled_at: iso } : prev)
+    } catch (err) {
+      console.error('handleSetScheduledAt error:', err)
+      setActionError('Failed to save scheduled date.')
+    } finally {
+      setSchedSaving(false)
+    }
+  }
+
+  async function handleSetPriority(p: string | null) {
+    setPrioritySaving(true)
+    try {
+      const { error } = await supabase.from('maintenance_requests').update({ priority: p }).eq('id', request.id)
+      if (error) throw error
+      setLocalPriority(p)
+      onUpdate?.(request.id, { priority: p })
+    } catch (err) {
+      console.error('handleSetPriority error:', err)
+      setActionError('Failed to update priority.')
+    } finally {
+      setPrioritySaving(false)
     }
   }
 
@@ -6116,6 +6164,58 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
                   {contractorName ? 'Reassign' : 'Assign'}
                 </button>
               )}
+            </div>
+
+            {/* Scheduled visit — admin can set/update */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: 12, color: '#8899aa' }}>Scheduled visit</p>
+                  <p style={{ fontSize: 13, color: localScheduledAt ? '#60a5fa' : '#8899aa', fontWeight: 500 }}>
+                    {localScheduledAt
+                      ? new Date(localScheduledAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) + ' at ' + new Date(localScheduledAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                      : 'Not scheduled'}
+                  </p>
+                </div>
+              </div>
+              {!isResolved && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                  <div>
+                    <p style={{ fontSize: 10, color: '#8899aa', marginBottom: 4 }}>Date</p>
+                    <input type="date" value={schedDate} min={new Date().toISOString().slice(0, 10)} onChange={e => setSchedDate(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', fontSize: 13, outline: 'none', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 10, color: '#8899aa', marginBottom: 4 }}>Time</p>
+                    <input type="time" value={schedTime} onChange={e => setSchedTime(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', fontSize: 13, outline: 'none', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  </div>
+                  <button type="button" onClick={handleSetScheduledAt} disabled={schedSaving || !schedDate || !schedTime}
+                    style={{ padding: '8px 14px', borderRadius: 8, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa', fontSize: 12, fontWeight: 600, opacity: (schedSaving || !schedDate || !schedTime) ? 0.4 : 1, whiteSpace: 'nowrap' }}>
+                    {schedSaving ? '…' : localScheduledAt ? 'Update' : 'Set'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Priority — admin can change */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 12, color: '#8899aa' }}>Priority</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {(['routine', 'urgent', 'emergency'] as const).map(p => (
+                  <button key={p} type="button" disabled={prioritySaving || isResolved}
+                    onClick={() => handleSetPriority(localPriority === p ? null : p)}
+                    style={{
+                      padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 500, textTransform: 'capitalize',
+                      background: localPriority === p ? (p === 'emergency' ? 'rgba(248,113,113,0.2)' : p === 'urgent' ? 'rgba(251,191,36,0.2)' : 'rgba(74,222,128,0.15)') : 'rgba(255,255,255,0.04)',
+                      color: localPriority === p ? (p === 'emergency' ? '#f87171' : p === 'urgent' ? '#fbbf24' : '#4ade80') : '#8899aa',
+                      border: `1px solid ${localPriority === p ? (p === 'emergency' ? 'rgba(248,113,113,0.4)' : p === 'urgent' ? 'rgba(251,191,36,0.35)' : 'rgba(74,222,128,0.3)') : 'rgba(255,255,255,0.07)'}`,
+                      opacity: (prioritySaving || isResolved) ? 0.5 : 1,
+                    }}>
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
             {isPendingReview && (
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12 }}>

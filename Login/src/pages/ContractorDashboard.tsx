@@ -192,6 +192,12 @@ export default function ContractorDashboard() {
   const [acceptDate, setAcceptDate] = useState('')
   const [acceptTime, setAcceptTime] = useState('')
 
+  // Reschedule
+  const [showReschedForm, setShowReschedForm] = useState(false)
+  const [reschedDate, setReschedDate] = useState('')
+  const [reschedTime, setReschedTime] = useState('')
+  const [reschedSaving, setReschedSaving] = useState(false)
+
   const userInitials = initials(user?.full_name, user?.email ?? '')
 
   // Load contractor record + jobs
@@ -1280,6 +1286,53 @@ export default function ContractorDashboard() {
                   </div>
                 ) : canComplete ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* Reschedule option */}
+                    {!showReschedForm ? (
+                      <button type="button" onClick={() => {
+                        setShowReschedForm(true)
+                        if (fullJob?.scheduled_at) {
+                          const d = new Date(fullJob.scheduled_at)
+                          setReschedDate(d.toISOString().slice(0, 10))
+                          setReschedTime(d.toTimeString().slice(0, 5))
+                        }
+                      }}
+                        style={{ width: '100%', padding: '10px 0', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#8899aa', fontSize: 13, fontWeight: 500 }}>
+                        Reschedule Visit
+                      </button>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}>
+                        <p style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8899aa', margin: 0 }}>New visit date</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Date</label>
+                            <input type="date" value={reschedDate} min={new Date().toISOString().slice(0, 10)} onChange={e => setReschedDate(e.target.value)}
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', fontSize: 13, outline: 'none', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Time</label>
+                            <input type="time" value={reschedTime} onChange={e => setReschedTime(e.target.value)}
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', fontSize: 13, outline: 'none', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button type="button" onClick={() => setShowReschedForm(false)}
+                            style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#8899aa', fontSize: 13 }}>
+                            Cancel
+                          </button>
+                          <button type="button" disabled={reschedSaving || !reschedDate || !reschedTime}
+                            onClick={async () => {
+                              setReschedSaving(true)
+                              const newIso = new Date(`${reschedDate}T${reschedTime}:00`).toISOString()
+                              await handleJobStatusUpdate('in_progress', newIso)
+                              setReschedSaving(false)
+                              setShowReschedForm(false)
+                            }}
+                            style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa', fontSize: 13, fontWeight: 600, opacity: (!reschedDate || !reschedTime) ? 0.4 : 1 }}>
+                            {reschedSaving ? 'Saving…' : 'Confirm'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {blockReasons.map(r => (
                       <p key={r} style={{ fontSize: 12, color: '#fbbf24', textAlign: 'center', margin: 0 }}>• {r}</p>
                     ))}

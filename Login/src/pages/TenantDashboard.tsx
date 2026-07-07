@@ -97,6 +97,17 @@ export default function TenantDashboard() {
   const [complianceItems, setComplianceItems] = useState<TenantComplianceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  async function handleConfirmResolved(requestId: string) {
+    setConfirmingId(requestId)
+    try {
+      await supabase.from('maintenance_requests').update({ status: 'closed' }).eq('id', requestId)
+      setMaintenanceRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'closed' } : r))
+    } finally {
+      setConfirmingId(null)
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -675,6 +686,17 @@ export default function TenantDashboard() {
                     }}
                   />
                 )}
+                {r.status === 'resolved' && (
+                  <div style={{ marginTop: 12 }}>
+                    <button type="button" onClick={() => handleConfirmResolved(r.id)}
+                      disabled={confirmingId === r.id}
+                      style={{ width: '100%', padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                        background: 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.3)', color: '#4ade80',
+                        opacity: confirmingId === r.id ? 0.5 : 1, cursor: confirmingId === r.id ? 'not-allowed' : 'pointer' }}>
+                      {confirmingId === r.id ? 'Confirming…' : 'Confirm Issue Resolved'}
+                    </button>
+                  </div>
+                )}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
                   <MessageThread requestId={r.id} threadParticipant="tenant" label="Messages with admin" />
                 </div>
@@ -775,6 +797,7 @@ function NewRequestModal({ tenancy, onClose, onSubmitted }: {
 }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState<'routine' | 'urgent' | 'emergency'>('routine')
   const [photos, setPhotos] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -814,10 +837,10 @@ function NewRequestModal({ tenancy, onClose, onSubmitted }: {
     }
     const { data, error: err } = await supabase
       .from('maintenance_requests')
-      .insert({ title: title.trim(), description: description.trim() || null, status: 'open', tenancy_id: tenancy.id, property_id: tenancy.property_id, photo_urls: uploadedUrls.length > 0 ? uploadedUrls : null })
+      .insert({ title: title.trim(), description: description.trim() || null, status: 'open', priority, tenancy_id: tenancy.id, property_id: tenancy.property_id, photo_urls: uploadedUrls.length > 0 ? uploadedUrls : null })
       .select('id, title, description, created_at, status, priority')
     if (err) { setError('Failed to submit. Please try again.'); setSubmitting(false); return }
-    const row = (data ?? [])[0] ?? { id: crypto.randomUUID(), title: title.trim(), description: description.trim() || null, created_at: new Date().toISOString(), status: 'open', priority: null }
+    const row = (data ?? [])[0] ?? { id: crypto.randomUUID(), title: title.trim(), description: description.trim() || null, created_at: new Date().toISOString(), status: 'open', priority }
     onSubmitted(row as MaintRequest)
   }
 
@@ -842,6 +865,22 @@ function NewRequestModal({ tenancy, onClose, onSubmitted }: {
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue in detail…" rows={3}
             maxLength={2000}
             style={{ width: '100%', padding: '10px 12px', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, fontSize: 14, color: '#e8edf5', outline: 'none', resize: 'none' }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Priority</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            {(['routine', 'urgent', 'emergency'] as const).map(p => (
+              <button key={p} type="button" onClick={() => setPriority(p)}
+                style={{
+                  padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, textTransform: 'capitalize',
+                  background: priority === p ? (p === 'emergency' ? 'rgba(248,113,113,0.2)' : p === 'urgent' ? 'rgba(251,191,36,0.2)' : 'rgba(74,222,128,0.15)') : 'rgba(255,255,255,0.05)',
+                  color: priority === p ? (p === 'emergency' ? '#f87171' : p === 'urgent' ? '#fbbf24' : '#4ade80') : '#8899aa',
+                  border: `1px solid ${priority === p ? (p === 'emergency' ? 'rgba(248,113,113,0.4)' : p === 'urgent' ? 'rgba(251,191,36,0.35)' : 'rgba(74,222,128,0.3)') : 'rgba(255,255,255,0.08)'}`,
+                }}>
+                {p}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Photos (up to 3)</label>
