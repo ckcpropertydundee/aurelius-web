@@ -76,7 +76,6 @@ serve(async (req) => {
 
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
       data: {
-        role,
         ...(name?.trim() ? { full_name: name.trim() } : {}),
       },
       redirectTo: 'https://login.aureliuspropertymanagement.co.uk',
@@ -88,7 +87,22 @@ serve(async (req) => {
       })
     }
 
-    return new Response(JSON.stringify({ ok: true, userId: data.user?.id }), {
+    // The handle_new_user trigger always defaults new users to 'tenant'.
+    // Explicitly set the correct role server-side using the service role key.
+    const userId = data.user?.id
+    if (userId) {
+      await adminClient
+        .from('users')
+        .update({ role, ...(name?.trim() ? { full_name: name.trim() } : {}) })
+        .eq('id', userId.toLowerCase())
+
+      await adminClient
+        .from('profiles')
+        .update({ role, ...(name?.trim() ? { full_name: name.trim() } : {}) })
+        .eq('id', userId)
+    }
+
+    return new Response(JSON.stringify({ ok: true, userId }), {
       status: 200, headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   } catch (err) {

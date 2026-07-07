@@ -20,19 +20,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  function profileFromSession(session: { user: { id: string; email?: string; user_metadata?: Record<string, string> } }): AppUser | null {
-    const meta = session.user.user_metadata ?? {}
-    if (!meta.role) return null
-    return {
-      id: session.user.id,
-      email: session.user.email ?? '',
-      full_name: meta.full_name ?? null,
-      company_name: meta.company_name ?? null,
-      role: meta.role as AppUser['role'],
-      status: 'active',
-    }
-  }
-
   async function fetchProfile(userId: string): Promise<AppUser | null> {
     const { data, error } = await supabase
       .from('users')
@@ -55,30 +42,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
 
-    // Enrich profile from DB in the background — never blocks the caller
-    function enrichInBackground(userId: string) {
+    // Role must always come from the users table — user_metadata is client-writable
+    // and cannot be trusted for routing. We always wait for the DB fetch.
+    function loadProfile(userId: string) {
       fetchProfile(userId).then((full) => {
-        if (active && full) setUser(full)
-        if (active) setIsLoading(false)
+        if (!active) return
+        if (full) {
+          setUser(full)
+        } else {
+          // No users row or suspended — sign out rather than fall back to metadata
+          supabase.auth.signOut()
+          setUser(null)
+        }
+        setIsLoading(false)
       }).catch(() => {
         if (active) setIsLoading(false)
       })
     }
 
-    // Read session from local storage immediately (no network call)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return
       if (session) {
-        const quick = profileFromSession(session)
-        if (quick) {
-          // Dismiss splash immediately — metadata has everything we need
-          setUser(quick)
-          setIsLoading(false)
-        }
-        // Enrich with DB profile (sets isLoading=false if quick was null)
-        enrichInBackground(session.user.id)
+        loadProfile(session.user.id)
       } else {
-        if (active) setIsLoading(false)
+        setIsLoading(false)
       }
     }).catch(() => {
       if (active) setIsLoading(false)
@@ -89,15 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return
       if (event === 'SIGNED_IN') {
-        if (session) {
-          const quick = profileFromSession(session)
-          if (quick) {
-            setUser(quick)
-            setIsLoading(false)
-          }
-          // Fire DB enrichment without blocking the Supabase subscriber
-          enrichInBackground(session.user.id)
-        }
+        if (session) loadProfile(session.user.id)
       } else if (event === 'SIGNED_OUT') {
         setUser(null)
         setIsLoading(false)
