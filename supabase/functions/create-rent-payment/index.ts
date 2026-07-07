@@ -6,27 +6,38 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const DEFAULT_MANAGEMENT_FEE_PCT = 8
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = new Set([
+  'https://aurelius-login.vercel.app',
+  'https://login.aureliuspropertymanagement.co.uk',
+])
+
+function corsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://login.aureliuspropertymanagement.co.uk'
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 serve(async (req) => {
+  const origin = req.headers.get('Origin')
+  const CORS = corsHeaders(origin)
+
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS })
 
   try {
     // Verify caller identity from JWT
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) return json({ error: 'Missing authorization' }, 401)
+    if (!authHeader) return json({ error: 'Missing authorization' }, 401, CORS)
 
     const anonClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
       global: { headers: { Authorization: authHeader } },
     })
     const { data: { user }, error: authErr } = await anonClient.auth.getUser()
-    if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
+    if (authErr || !user) return json({ error: 'Unauthorized' }, 401, CORS)
 
     const { tenancy_id } = await req.json() as { tenancy_id: string }
-    if (!tenancy_id) return json({ error: 'tenancy_id required' }, 400)
+    if (!tenancy_id) return json({ error: 'tenancy_id required' }, 400, CORS)
 
     // Use service role to read sensitive data
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -39,11 +50,11 @@ serve(async (req) => {
       .eq('is_current', true)
       .single()
 
-    if (tenancyErr || !tenancy) return json({ error: 'Tenancy not found' }, 404)
-    if (tenancy.tenant_id !== user.id) return json({ error: 'Forbidden' }, 403)
+    if (tenancyErr || !tenancy) return json({ error: 'Tenancy not found' }, 404, CORS)
+    if (tenancy.tenant_id !== user.id) return json({ error: 'Forbidden' }, 403, CORS)
 
     const landlordId = (tenancy.properties as { landlord_id: string } | null)?.landlord_id
-    if (!landlordId) return json({ error: 'Property has no landlord assigned' }, 422)
+    if (!landlordId) return json({ error: 'Property has no landlord assigned' }, 422, CORS)
 
     // Get management fee rate for this landlord
     const { data: landlordRow } = await db
@@ -118,7 +129,8 @@ serve(async (req) => {
 
     const pi = await stripeRes.json() as { id: string; client_secret: string; error?: { message: string } }
     if (!stripeRes.ok || pi.error) {
-      return json({ error: pi.error?.message ?? 'Stripe error' }, 500)
+      console.error('[create-rent-payment] Stripe error:', pi.error?.message)
+      return json({ error: 'Payment setup failed. Please try again.' }, 500, CORS)
     }
 
     // Record the pending payment
@@ -147,17 +159,17 @@ serve(async (req) => {
       repair_deductions: repairDeductions,
       management_fee: billedRent * feePct / 100,
       landlord_receives: billedRent * (1 - feePct / 100),
-    })
+    }, 200, CORS)
   } catch (err) {
     console.error('[create-rent-payment]', err)
-    return json({ error: String(err) }, 500)
+    return json({ error: 'Payment setup failed. Please try again.' }, 500, CORS)
   }
 })
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, cors: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
+    headers: { ...cors, 'Content-Type': 'application/json' },
   })
 }
 

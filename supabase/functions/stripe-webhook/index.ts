@@ -6,6 +6,10 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
+if (!STRIPE_WEBHOOK_SECRET) {
+  throw new Error('STRIPE_WEBHOOK_SECRET env var is not set — refusing to start')
+}
+
 async function verifyStripeSignature(rawBody: string, sigHeader: string, secret: string): Promise<boolean> {
   const parts: Record<string, string> = {}
   for (const part of sigHeader.split(',')) {
@@ -30,11 +34,9 @@ serve(async (req) => {
   const sigHeader = req.headers.get('Stripe-Signature') ?? ''
   const rawBody = await req.text()
 
-  if (STRIPE_WEBHOOK_SECRET) {
-    const valid = await verifyStripeSignature(rawBody, sigHeader, STRIPE_WEBHOOK_SECRET)
-    if (!valid) {
-      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400 })
-    }
+  const valid = await verifyStripeSignature(rawBody, sigHeader, STRIPE_WEBHOOK_SECRET)
+  if (!valid) {
+    return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400 })
   }
 
   let event: { type: string; data: { object: Record<string, unknown> } }

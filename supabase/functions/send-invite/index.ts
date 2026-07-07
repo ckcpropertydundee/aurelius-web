@@ -4,9 +4,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = new Set([
+  'https://aurelius-login.vercel.app',
+  'https://login.aureliuspropertymanagement.co.uk',
+])
+
+function corsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://login.aureliuspropertymanagement.co.uk'
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -16,6 +24,9 @@ const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const ALLOWED_ROLES = ['landlord', 'tenant', 'contractor']
 
 serve(async (req) => {
+  const origin = req.headers.get('Origin')
+  const CORS = corsHeaders(origin)
+
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS })
 
   try {
@@ -35,7 +46,14 @@ serve(async (req) => {
       })
     }
 
-    const callerRole = caller.user_metadata?.role ?? ''
+    // Read role from users table — never trust user_metadata which is client-writable
+    const { data: callerProfile } = await adminClient
+      .from('users')
+      .select('role')
+      .eq('id', caller.id)
+      .single()
+
+    const callerRole = callerProfile?.role ?? ''
     if (callerRole !== 'admin' && callerRole !== 'master admin') {
       return new Response(JSON.stringify({ ok: false, error: 'Forbidden' }), {
         status: 403, headers: { ...CORS, 'Content-Type': 'application/json' },
@@ -74,7 +92,8 @@ serve(async (req) => {
       status: 200, headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: String(err) }), {
+    console.error('[send-invite]', err)
+    return new Response(JSON.stringify({ ok: false, error: 'An error occurred. Please try again.' }), {
       status: 500, headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   }

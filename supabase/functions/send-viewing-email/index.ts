@@ -112,6 +112,9 @@ serve(async (req) => {
       status: res.ok ? 200 : 500,
     })
   } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: String(err) }), { status: 500 })
+    console.error('[send-viewing-email]', err)
+    return new Response(JSON.stringify({ ok: false, error: 'Failed to send email. Please try again.' }), {
+      status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    })
   }
 })
