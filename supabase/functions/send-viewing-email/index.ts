@@ -5,6 +5,17 @@ const FROM = 'Aurelius Property Management <viewings@aureliuspropertymanagement.
 const REPLY_TO = 'aureliuspropertymanagement@gmail.com'
 const LISTINGS_URL = 'https://login.aureliuspropertymanagement.co.uk/for-let'
 
+// 30 emails per IP per hour — generous for admin use, blocks external flooding
+const rlStore = new Map<string, number[]>()
+function rateLimit(ip: string, max = 30, windowMs = 60 * 60 * 1000): boolean {
+  const now = Date.now()
+  const hits = (rlStore.get(ip) ?? []).filter(t => t > now - windowMs)
+  if (hits.length >= max) { rlStore.set(ip, hits); return false }
+  hits.push(now)
+  rlStore.set(ip, hits)
+  return true
+}
+
 interface ViewingPayload {
   name: string
   email: string
@@ -93,6 +104,13 @@ function cancelledEmail(v: ViewingPayload) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } })
+  }
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+  if (!rateLimit(ip)) {
+    return new Response(JSON.stringify({ ok: false, error: 'Too many requests. Please try again later.' }), {
+      status: 429, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    })
   }
 
   try {

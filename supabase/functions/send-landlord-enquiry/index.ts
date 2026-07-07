@@ -9,6 +9,17 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// 5 submissions per IP per hour
+const rlStore = new Map<string, number[]>()
+function rateLimit(ip: string, max = 5, windowMs = 60 * 60 * 1000): boolean {
+  const now = Date.now()
+  const hits = (rlStore.get(ip) ?? []).filter(t => t > now - windowMs)
+  if (hits.length >= max) { rlStore.set(ip, hits); return false }
+  hits.push(now)
+  rlStore.set(ip, hits)
+  return true
+}
+
 interface EnquiryPayload {
   name: string
   email: string
@@ -83,6 +94,13 @@ function confirmationEmail(p: EnquiryPayload) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS })
+  }
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+  if (!rateLimit(ip)) {
+    return new Response(JSON.stringify({ ok: false, error: 'Too many requests. Please try again later.' }), {
+      status: 429, headers: { ...CORS, 'Content-Type': 'application/json' },
+    })
   }
 
   try {
