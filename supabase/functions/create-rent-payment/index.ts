@@ -6,6 +6,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const DEFAULT_MANAGEMENT_FEE_PCT = 8
 
+if (!STRIPE_SECRET_KEY) throw new Error('STRIPE_SECRET_KEY env var is not set — refusing to start')
+if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error('SUPABASE_SERVICE_ROLE_KEY env var is not set — refusing to start')
+
 const ALLOWED_ORIGINS = new Set([
   'https://aurelius-login.vercel.app',
   'https://login.aureliuspropertymanagement.co.uk',

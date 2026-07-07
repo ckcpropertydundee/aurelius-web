@@ -17,6 +17,10 @@ interface EnquiryPayload {
   message?: string
 }
 
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
 function emailBase(bodyHtml: string) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <style>body{margin:0;padding:0;background:#f4f4f0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:300}
@@ -40,17 +44,17 @@ function emailBase(bodyHtml: string) {
 
 function notifyEmail(p: EnquiryPayload) {
   return {
-    subject: `New Landlord Enquiry — ${p.name}`,
+    subject: `New Landlord Enquiry — ${esc(p.name)}`,
     html: emailBase(`
       <h2>New Landlord Enquiry</h2>
       <p>A landlord has submitted an access request through the website.</p>
       <div class="detail">
         <p class="label">Enquiry details</p>
-        <p><strong>Name</strong><br>${p.name}</p>
-        <p><strong>Email</strong><br><a href="mailto:${p.email}" style="color:#0d1b3e">${p.email}</a></p>
-        ${p.phone ? `<p><strong>Phone</strong><br>${p.phone}</p>` : ''}
-        <p><strong>Number of properties</strong><br>${p.properties}</p>
-        ${p.message ? `<p><strong>Message</strong><br>${p.message}</p>` : ''}
+        <p><strong>Name</strong><br>${esc(p.name)}</p>
+        <p><strong>Email</strong><br><a href="mailto:${esc(p.email)}" style="color:#0d1b3e">${esc(p.email)}</a></p>
+        ${p.phone ? `<p><strong>Phone</strong><br>${esc(p.phone)}</p>` : ''}
+        <p><strong>Number of properties</strong><br>${esc(p.properties)}</p>
+        ${p.message ? `<p><strong>Message</strong><br>${esc(p.message)}</p>` : ''}
       </div>
       <p>Reply directly to this email to respond to the enquiry.</p>
     `),
@@ -58,7 +62,7 @@ function notifyEmail(p: EnquiryPayload) {
 }
 
 function confirmationEmail(p: EnquiryPayload) {
-  const firstName = p.name.split(' ')[0]
+  const firstName = esc(p.name.split(' ')[0])
   return {
     subject: 'We\'ve received your enquiry — Aurelius',
     html: emailBase(`
@@ -67,9 +71,9 @@ function confirmationEmail(p: EnquiryPayload) {
       <p>Thanks for getting in touch. We've received your request and will be in touch within one business day to discuss getting your portfolio set up on Aurelius.</p>
       <div class="detail">
         <p class="label">Your details</p>
-        <p><strong>Name</strong><br>${p.name}</p>
-        <p><strong>Properties</strong><br>${p.properties}</p>
-        ${p.message ? `<p><strong>Notes</strong><br>${p.message}</p>` : ''}
+        <p><strong>Name</strong><br>${esc(p.name)}</p>
+        <p><strong>Properties</strong><br>${esc(p.properties)}</p>
+        ${p.message ? `<p><strong>Notes</strong><br>${esc(p.message)}</p>` : ''}
       </div>
       <p>If you have any questions in the meantime, reply to this email.</p>
     `),

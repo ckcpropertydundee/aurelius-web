@@ -92,6 +92,7 @@ function ThreadPanel({
   async function send() {
     const body = draft.trim()
     if (!body || sending) return
+    if (body.length > 2000) return
     setSending(true)
     await supabase.from('messages').insert({
       request_id: requestId,
@@ -170,6 +171,7 @@ function ThreadPanel({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             placeholder="Type a message…"
+            maxLength={2000}
             style={{
               flex: 1,
               border: '1px solid #d1d5db',

@@ -782,8 +782,11 @@ function NewRequestModal({ tenancy, onClose, onSubmitted }: {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
     const files = Array.from(e.target.files ?? []).slice(0, 3 - photos.length)
     if (!files.length) return
+    const oversized = files.find(f => f.size > MAX_FILE_SIZE)
+    if (oversized) { setError('Photos must be under 10 MB each.'); e.target.value = ''; return }
     const newPhotos = [...photos, ...files].slice(0, 3)
     setPhotos(newPhotos)
     const newPreviews = newPhotos.map((f) => URL.createObjectURL(f))
@@ -831,11 +834,13 @@ function NewRequestModal({ tenancy, onClose, onSubmitted }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Issue Title</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leaking tap in bathroom"
+            maxLength={150}
             style={{ width: '100%', padding: '10px 12px', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, fontSize: 14, color: '#e8edf5', outline: 'none' }} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Description</label>
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue in detail…" rows={3}
+            maxLength={2000}
             style={{ width: '100%', padding: '10px 12px', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, fontSize: 14, color: '#e8edf5', outline: 'none', resize: 'none' }} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -17,6 +17,10 @@ function fmtDate(iso: string) {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
 function emailBase(bodyHtml: string) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <style>body{margin:0;padding:0;background:#f4f4f0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:300}
@@ -40,15 +44,15 @@ function emailBase(bodyHtml: string) {
 
 function confirmedEmail(v: ViewingPayload) {
   return {
-    subject: `Viewing Confirmed — ${v.address}`,
+    subject: `Viewing Confirmed — ${esc(v.address)}`,
     html: emailBase(`
       <h2>Your Viewing is Confirmed</h2>
-      <p>Hi ${v.name},</p>
+      <p>Hi ${esc(v.name)},</p>
       <p>Your viewing has been confirmed. We look forward to seeing you.</p>
       <div class="detail">
         <p class="label">Viewing details</p>
-        <p><strong style="color:#0d1b3e">${v.address}</strong></p>
-        <p>${fmtDate(v.date)} at ${v.time}</p>
+        <p><strong style="color:#0d1b3e">${esc(v.address)}</strong></p>
+        <p>${fmtDate(v.date)} at ${esc(v.time)}</p>
       </div>
       <p>If you have any questions, reply to this email or contact us at <a href="mailto:${REPLY_TO}" style="color:#0d1b3e">${REPLY_TO}</a>.</p>
     `),
@@ -57,15 +61,15 @@ function confirmedEmail(v: ViewingPayload) {
 
 function receivedEmail(v: ViewingPayload) {
   return {
-    subject: `Viewing Request Received — ${v.address}`,
+    subject: `Viewing Request Received — ${esc(v.address)}`,
     html: emailBase(`
       <h2>Request Received</h2>
-      <p>Hi ${v.name},</p>
+      <p>Hi ${esc(v.name)},</p>
       <p>We've received your viewing request and will be in touch shortly to confirm.</p>
       <div class="detail">
         <p class="label">Requested viewing</p>
-        <p><strong style="color:#0d1b3e">${v.address}</strong></p>
-        <p>${fmtDate(v.date)} at ${v.time}</p>
+        <p><strong style="color:#0d1b3e">${esc(v.address)}</strong></p>
+        <p>${fmtDate(v.date)} at ${esc(v.time)}</p>
       </div>
       <p>If you need to change anything in the meantime, reply to this email or contact us at <a href="mailto:${REPLY_TO}" style="color:#0d1b3e">${REPLY_TO}</a>.</p>
     `),
@@ -74,11 +78,11 @@ function receivedEmail(v: ViewingPayload) {
 
 function cancelledEmail(v: ViewingPayload) {
   return {
-    subject: `Viewing Cancelled — ${v.address}`,
+    subject: `Viewing Cancelled — ${esc(v.address)}`,
     html: emailBase(`
       <h2>Viewing Cancelled</h2>
-      <p>Hi ${v.name},</p>
-      <p>Unfortunately your viewing at <strong style="color:#0d1b3e">${v.address}</strong> on ${fmtDate(v.date)} at ${v.time} has been cancelled.</p>
+      <p>Hi ${esc(v.name)},</p>
+      <p>Unfortunately your viewing at <strong style="color:#0d1b3e">${esc(v.address)}</strong> on ${fmtDate(v.date)} at ${esc(v.time)} has been cancelled.</p>
       <p>This may be because the property has been let to another applicant. Please browse our other available properties — we may have something that suits you.</p>
       <a href="${LISTINGS_URL}" class="btn">View Available Properties</a>
       <p style="margin-top:20px">If you have any questions, reply to this email or contact us at <a href="mailto:${REPLY_TO}" style="color:#0d1b3e">${REPLY_TO}</a>.</p>
