@@ -116,18 +116,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signUp(email: string, password: string, fullName: string, role: string, companyName?: string) {
+    const name = toTitleCase(fullName)
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
-          full_name: toTitleCase(fullName),
+          full_name: name,
           role,
           ...(companyName?.trim() ? { company_name: toTitleCase(companyName) } : {}),
         },
       },
     })
     if (error) throw error
+    supabase.functions.invoke('send-notification-email', {
+      body: { event: 'new_user', data: { name, email, role } },
+    }).catch(() => {})
   }
 
   async function signOut() {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import type { Property, MaintenanceRequest, PropertyDocument } from '../lib/types'
@@ -18,6 +18,17 @@ const TABS = [
   { id: 'statements',  label: 'Statements',  icon: <IconSterling /> },
   { id: 'settings',    label: 'Settings',    icon: <IconGear /> },
 ]
+
+interface StripePayout {
+  id: string; amount: number; currency: string
+  arrival_date: number; status: string; description: string | null
+}
+interface LandlordFinancials {
+  connected: boolean; onboarding_complete: boolean
+  charges_enabled: boolean; payouts_enabled: boolean
+  balance?: { available: { amount: number; currency: string }[]; pending: { amount: number; currency: string }[] }
+  payouts?: StripePayout[]
+}
 
 interface Statement {
   id: string
@@ -84,6 +95,9 @@ export default function LandlordDashboard() {
   const [statementsLoaded, setStatementsLoaded] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [selectedMaintenance, setSelectedMaintenance] = useState<MaintenanceRequest | null>(null)
+  const [financials, setFinancials] = useState<LandlordFinancials | null>(null)
+  const [financialsLoading, setFinancialsLoading] = useState(false)
+  const [setupBanner, setSetupBanner] = useState<'complete' | 'refresh' | null>(null)
 
   const loadData = useCallback(async () => {
     if (!user) return
@@ -95,10 +109,9 @@ export default function LandlordDashboard() {
       setProperties(propList)
       if (propList.length > 0) {
         const propIds = propList.map((p) => p.id)
-        const in60 = new Date(); in60.setDate(in60.getDate() + 60)
         const [{ data: maint }, { data: docs }, { data: compliance }, { data: tenancyRows }] = await Promise.all([
           supabase.from('maintenance_requests').select('*').in('property_id', propIds).order('created_at', { ascending: false }),
-          supabase.from('documents').select('*').in('property_id', propIds).lte('expiry_date', in60.toISOString().split('T')[0]).order('expiry_date', { ascending: true }),
+          supabase.from('documents').select('*').in('property_id', propIds).order('expiry_date', { ascending: true }),
           supabase.from('compliance_items').select('id, property_id, type, expiry_date').in('property_id', propIds),
           supabase.from('tenancies').select('id').in('property_id', propIds).eq('is_current', true),
         ])
@@ -142,13 +155,28 @@ export default function LandlordDashboard() {
   const occupancyRate = stats.totalProperties > 0 ? (stats.occupiedProperties / stats.totalProperties) * 100 : 0
   const collectionRate = stats.totalMonthlyRent > 0 ? (stats.paidThisMonth / stats.totalMonthlyRent) * 100 : 0
 
+  const urgentDocCount = documents.filter(d => {
+    if (!d.expiry_date) return false
+    const days = Math.ceil((new Date(d.expiry_date).getTime() - Date.now()) / 86400000)
+    return days < 60
+  }).length
+
   const metrics = [
     { label: 'Monthly Rent', value: gbp(stats.totalMonthlyRent) },
     { label: 'Properties', value: `${stats.totalProperties} total` },
     { label: 'Occupancy', value: percent(occupancyRate, 0) },
     { label: 'Open Tickets', value: String(stats.openMaintenance) },
-    { label: 'Expiring Docs', value: String(documents.length) },
+    { label: 'Certs Due', value: String(urgentDocCount) },
   ]
+
+  async function loadFinancials() {
+    setFinancialsLoading(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('get-landlord-financials')
+      if (!error && data) setFinancials(data as LandlordFinancials)
+    } catch { /* silent */ }
+    setFinancialsLoading(false)
+  }
 
   async function loadStatements() {
     setStatementsLoading(true)
@@ -161,10 +189,25 @@ export default function LandlordDashboard() {
     setStatementsLoading(false)
   }
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const setup = params.get('setup') as 'complete' | 'refresh' | null
+    if (setup === 'complete' || setup === 'refresh') {
+      setSetupBanner(setup)
+      setTab('statements')
+      window.history.replaceState({}, '', window.location.pathname)
+      loadFinancials()
+      loadStatements()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleTabChange(newTab: string) {
     setSelectedProperty(null)
     setTab(newTab)
-    if (newTab === 'statements' && !statementsLoaded) loadStatements()
+    if (newTab === 'statements') {
+      if (!statementsLoaded) loadStatements()
+      if (!financials) loadFinancials()
+    }
   }
 
   return (
@@ -232,20 +275,26 @@ export default function LandlordDashboard() {
               )}
             </div>
 
-            {/* Expiring certs */}
-            {documents.length > 0 && (
-              <div>
-                <SectionHeader title="Expiring Certificates" />
-                <div style={CARD}>
-                  {documents.slice(0, 3).map((d, i) => (
-                    <div key={d.id}>
-                      <ExpiringDocRow doc={d} />
-                      {i < Math.min(documents.length, 3) - 1 && <div style={DIVIDER} />}
-                    </div>
-                  ))}
+            {/* Expiring certs — show top 3 soonest-expiring on the home tab */}
+            {documents.filter(d => d.expiry_date).length > 0 && (() => {
+              const today = new Date()
+              const soonest = [...documents].filter(d => d.expiry_date).sort((a, b) => new Date(a.expiry_date!).getTime() - new Date(b.expiry_date!).getTime()).slice(0, 3)
+              const hasUrgent = soonest.some(d => { const days = Math.ceil((new Date(d.expiry_date!).getTime() - today.getTime()) / 86400000); return days < 60 })
+              if (!hasUrgent) return null
+              return (
+                <div>
+                  <SectionHeader title="Certificates Requiring Attention" />
+                  <div style={CARD}>
+                    {soonest.filter(d => { const days = Math.ceil((new Date(d.expiry_date!).getTime() - new Date().getTime()) / 86400000); return days < 60 }).map((d, i, arr) => (
+                      <div key={d.id}>
+                        <ExpiringDocRow doc={d} />
+                        {i < arr.length - 1 && <div style={DIVIDER} />}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Required compliance overview across portfolio */}
             {!isLoading && properties.length > 0 && (() => {
@@ -321,7 +370,7 @@ export default function LandlordDashboard() {
             {isLoading ? (
               [...Array(3)].map((_, i) => <div key={i} style={{ ...CARD, height: 64, opacity: 0.4 }} className="animate-pulse" />)
             ) : documents.length === 0 ? (
-              <EmptyState icon={<IconDoc />} title="No expiring documents" subtitle="Certificates expiring within 60 days will appear here" />
+              <EmptyState icon={<IconDoc />} title="No documents" subtitle="Property certificates and documents will appear here" />
             ) : (
               <div style={CARD}>
                 {documents.map((d, i) => (
@@ -340,6 +389,13 @@ export default function LandlordDashboard() {
             statements={statements}
             isLoading={statementsLoading}
             properties={properties}
+            financials={financials}
+            financialsLoading={financialsLoading}
+            setupBanner={setupBanner}
+            onDismissBanner={() => setSetupBanner(null)}
+            collectedThisMonth={paidThisMonth}
+            totalMonthlyRent={stats.totalMonthlyRent}
+            landlordName={user?.company_name ?? user?.full_name ?? 'Landlord'}
           />
         )}
 
@@ -435,7 +491,7 @@ function PropertyDetailPanel({ property, onBack, onMaintenanceSelect }: { proper
       try {
         const [tenancyRes, maintRes, docsRes, complianceRes] = await Promise.all([
           supabase.from('tenancies').select('id, monthly_rent, start_date, end_date, arrears_balance, tenant_id, deposit_scheme, deposit_registered_date, last_rent_increase_date, profiles!tenant_id(full_name, email)').eq('property_id', property.id).eq('is_current', true).limit(1).maybeSingle(),
-          supabase.from('maintenance_requests').select('id, title, description, priority, status, created_at, property_id, updated_at, resolved_at').eq('property_id', property.id).order('created_at', { ascending: false }).limit(10),
+          supabase.from('maintenance_requests').select('id, title, description, priority, status, created_at, property_id, updated_at, resolved_at, assigned_contractor_id, cost, request_type, scheduled_at, completion_photo_urls, completion_document_url').eq('property_id', property.id).order('created_at', { ascending: false }).limit(10),
           supabase.from('documents').select('*').eq('property_id', property.id).order('expiry_date', { ascending: true }),
           supabase.from('compliance_items').select('id, type, issue_date, expiry_date, document_url').eq('property_id', property.id).order('expiry_date', { ascending: true }),
         ])
@@ -802,11 +858,16 @@ function PropertyDetailPanel({ property, onBack, onMaintenanceSelect }: { proper
 function MaintenanceDetailSheet({ request, onClose }: { request: MaintenanceRequest; onClose: () => void }) {
   const [history, setHistory] = useState<StatusEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [contractorName, setContractorName] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.from('maintenance_status_history').select('id, old_status, new_status, notes, created_at').eq('maintenance_request_id', request.id).order('created_at', { ascending: true })
       .then(({ data }) => { setHistory((data ?? []) as StatusEntry[]); setHistoryLoading(false) })
-  }, [request.id])
+    if (request.assigned_contractor_id) {
+      supabase.rpc('get_contractor_name_for_request', { request_id: request.id })
+        .then(({ data }) => { if (data) setContractorName(data as string) })
+    }
+  }, [request.id, request.assigned_contractor_id])
 
   const priority = request.priority ?? 'low'
   const status = request.status ?? 'open'
@@ -863,8 +924,96 @@ function MaintenanceDetailSheet({ request, onClose }: { request: MaintenanceRequ
                   )}
                 </div>
               </div>
+
+              {/* Contractor */}
+              {contractorName && (
+                <>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 6, background: 'rgba(251,191,36,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24"><path d="M15.5 2.1a6.5 6.5 0 0 0-6.22 8.5L3 17.1a2.1 2.1 0 1 0 3 3l6.3-6.3a6.5 6.5 0 1 0 3.2-11.7zm0 11a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Contractor</p>
+                      <p style={{ fontSize: 13, color: '#e8edf5', marginTop: 2 }}>{contractorName}</p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Scheduled visit — all job types */}
+              {request.scheduled_at && (
+                <>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 6, background: 'rgba(96,165,250,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#60a5fa"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Scheduled Visit</p>
+                      <p style={{ fontSize: 13, color: '#60a5fa', marginTop: 2 }}>
+                        {new Date(request.scheduled_at).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        {' at '}
+                        {new Date(request.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Job cost — shown once resolved */}
+              {request.cost != null && (request.status === 'resolved' || request.status === 'closed' || request.status === 'pending_review') && (
+                <>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 6, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#4ade80"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Job Cost</p>
+                      <p style={{ fontSize: 13, color: '#4ade80', marginTop: 2 }}>{gbp(request.cost)}</p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
+
+          {/* Completion photos */}
+          {request.completion_photo_urls && request.completion_photo_urls.length > 0 && (
+            <div>
+              <p style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Completion Photos</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {request.completion_photo_urls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', borderRadius: 8, overflow: 'hidden', aspectRatio: '4/3' }}>
+                    <img src={url} alt={`Completion photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Compliance certificate */}
+          {request.completion_document_url && (
+            <div>
+              <p style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Compliance Certificate</p>
+              <a
+                href={request.completion_document_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', textDecoration: 'none' }}
+              >
+                <div style={{ width: 30, height: 30, borderRadius: 6, background: 'rgba(74,222,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#4ade80"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-3 6h4v1.5H9V15zm0-3h6v1.5H9V12z"/></svg>
+                </div>
+                <div>
+                  <p style={{ fontSize: 13, color: '#4ade80', fontWeight: 500 }}>View Certificate PDF</p>
+                  <p style={{ fontSize: 11, color: '#8899aa', marginTop: 1 }}>Uploaded by contractor</p>
+                </div>
+                <svg style={{ marginLeft: 'auto' }} width="12" height="12" viewBox="0 0 24 24" fill="#8899aa"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+              </a>
+            </div>
+          )}
 
           {/* Timeline */}
           <div>
@@ -1060,17 +1209,156 @@ function maintenanceStatusText(status: string | null): string {
 
 // ── Statements Tab ──
 
-function StatementsTab({ statements, isLoading, properties }: {
+function StatementsTab({ statements, isLoading, properties, financials, financialsLoading, setupBanner, onDismissBanner, collectedThisMonth, totalMonthlyRent, landlordName }: {
   statements: Statement[]
   isLoading: boolean
   properties: Property[]
+  financials: LandlordFinancials | null
+  financialsLoading: boolean
+  setupBanner: 'complete' | 'refresh' | null
+  onDismissBanner: () => void
+  collectedThisMonth: number
+  totalMonthlyRent: number
+  landlordName: string
 }) {
+  const [connecting, setConnecting] = useState(false)
+  const [connectError, setConnectError] = useState<string | null>(null)
+  const [viewingStatement, setViewingStatement] = useState<Statement | null>(null)
   const propMap = Object.fromEntries(properties.map(p => [p.id, p.address]))
 
-  async function handleDownload(stmt: Statement) {
-    if (!stmt.pdf_url) return
-    const { data } = await supabase.storage.from('rent-statements').createSignedUrl(stmt.pdf_url, 60)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  async function handleConnectBank() {
+    setConnecting(true); setConnectError(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('create-connect-account')
+      if (error || !data?.url) throw new Error(error?.message ?? 'Failed to create account link')
+      window.location.href = data.url
+    } catch (err) {
+      setConnectError(String(err))
+      setConnecting(false)
+    }
+  }
+
+  function buildStatementHtml(stmt: Statement) {
+    const address = stmt.property_id ? (propMap[stmt.property_id] ?? 'Property') : 'Property'
+    const period = new Date(stmt.period).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    const stmtRef = stmt.id.slice(0, 8).toUpperCase()
+    const feePct = stmt.gross_amount > 0 ? ((stmt.management_fee / stmt.gross_amount) * 100).toFixed(1) : '0'
+    const generated = fmtDateTime(stmt.created_at)
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Rental Statement — ${address} — ${period}</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 300; background: #fff; color: #111827; padding: 40px; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid #e5e7eb; }
+      .brand { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #0d1b3e; font-weight: 600; }
+      .brand-sub { font-size: 10px; color: #9ca3af; margin-top: 3px; }
+      .ref { text-align: right; }
+      .ref-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: #9ca3af; }
+      .ref-value { font-size: 13px; font-weight: 600; color: #111827; margin-top: 2px; }
+      h1 { font-size: 22px; font-weight: 300; color: #0d1b3e; margin-bottom: 4px; }
+      .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 28px; }
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+      .meta-item { background: #f9fafb; border-radius: 8px; padding: 12px 14px; }
+      .meta-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: #9ca3af; margin-bottom: 4px; }
+      .meta-value { font-size: 14px; font-weight: 600; color: #111827; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+      thead th { padding: 10px 14px; background: #0d1b3e; color: #fff; text-align: left; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500; }
+      tbody td { padding: 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
+      tbody tr:last-child td { border-bottom: none; }
+      .amount { text-align: right; font-variant-numeric: tabular-nums; }
+      .total-row td { background: #f9fafb; font-weight: 600; font-size: 14px; color: #111827; border-top: 2px solid #e5e7eb; }
+      .net-row td { background: #f0fdf4; font-weight: 700; font-size: 16px; color: #15803d; border-top: 2px solid #86efac; }
+      .negative { color: #dc2626; }
+      .status { display: inline-block; padding: 3px 10px; border-radius: 4px; background: #dcfce7; color: #15803d; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+      .notes { background: #fefce8; border-left: 3px solid #fbbf24; padding: 10px 14px; font-size: 12px; color: #92400e; margin-bottom: 24px; border-radius: 0 6px 6px 0; }
+      .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; display: flex; justify-content: space-between; }
+      @media print { body { padding: 20px; } }
+    </style></head><body>
+    <div class="header">
+      <div>
+        <div class="brand">Aurelius Property Management</div>
+        <div class="brand-sub">aureliuspropertymanagement.co.uk</div>
+      </div>
+      <div class="ref">
+        <div class="ref-label">Statement Ref</div>
+        <div class="ref-value">AUR-${stmtRef}</div>
+      </div>
+    </div>
+
+    <h1>Rental Statement</h1>
+    <p class="subtitle">${period}</p>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <div class="meta-label">Landlord</div>
+        <div class="meta-value">${landlordName}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Property</div>
+        <div class="meta-value">${address}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Status</div>
+        <div class="meta-value"><span class="status">${stmt.status}</span></div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Description</th><th class="amount">Amount</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Gross rent received</td>
+          <td class="amount">${gbp(stmt.gross_amount)}</td>
+        </tr>
+        <tr>
+          <td>Management fee (${feePct}%)</td>
+          <td class="amount negative">−${gbp(stmt.management_fee)}</td>
+        </tr>
+        <tr class="net-row">
+          <td>Net amount to landlord</td>
+          <td class="amount">${gbp(stmt.net_amount)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    ${stmt.notes ? `<div class="notes"><strong>Notes:</strong> ${stmt.notes}</div>` : ''}
+
+    <div class="footer">
+      <span>Generated ${generated}</span>
+      <span>Aurelius Property Management · Dundee · This statement is for information purposes only.</span>
+    </div>
+    </body></html>`
+
+    return { html, address, period }
+  }
+
+  function handleView(stmt: Statement) {
+    setViewingStatement(stmt)
+  }
+
+  function handleDownload(stmt: Statement) {
+    const { html, address, period } = buildStatementHtml(stmt)
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Aurelius-Statement-${period.replace(/\s/g, '-')}-${(address).replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-')}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const gbpFromStripe = (amount: number) => gbp(amount / 100)
+  const fmtUnix = (ts: number) => new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  const payoutStatusStyle = (status: string) => {
+    if (status === 'paid') return { bg: 'rgba(74,222,128,0.12)', color: '#4ade80' }
+    if (status === 'failed') return { bg: 'rgba(248,113,113,0.12)', color: '#f87171' }
+    return { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24' }
   }
 
   const byYear: Record<string, Statement[]> = {}
@@ -1083,6 +1371,90 @@ function StatementsTab({ statements, isLoading, properties }: {
 
   return (
     <div className="px-4 py-5 flex flex-col gap-5">
+
+      {/* Setup banner */}
+      {setupBanner && (
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: setupBanner === 'complete' ? 'rgba(74,222,128,0.1)' : 'rgba(251,191,36,0.1)', border: `1px solid ${setupBanner === 'complete' ? 'rgba(74,222,128,0.25)' : 'rgba(251,191,36,0.25)'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <p style={{ fontSize: 13, color: setupBanner === 'complete' ? '#4ade80' : '#fbbf24' }}>
+            {setupBanner === 'complete' ? 'Bank account connected. Payouts will appear below once rent is processed.' : 'Setup incomplete — click "Continue Setup" to finish connecting your bank account.'}
+          </p>
+          <button type="button" onClick={onDismissBanner} style={{ background: 'none', border: 'none', color: '#8899aa', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}>×</button>
+        </div>
+      )}
+
+      {/* Bank account / payouts section */}
+      <div>
+        <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 12 }}>Bank Account & Payouts</p>
+
+        {financialsLoading ? (
+          <div style={{ ...CARD, height: 100, opacity: 0.4 }} className="animate-pulse" />
+        ) : !financials?.connected ? (
+          <div style={{ ...CARD, padding: '20px 16px', textAlign: 'center' }}>
+            <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif', marginBottom: 6 }}>Connect your bank account</p>
+            <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 16 }}>Receive rent payments directly to your UK bank account via Stripe.</p>
+            {connectError && <p style={{ fontSize: 12, color: '#f87171', marginBottom: 12 }}>{connectError}</p>}
+            <button type="button" onClick={handleConnectBank} disabled={connecting}
+              style={{ padding: '10px 24px', borderRadius: 8, background: '#4ade80', color: '#0d1b2e', fontWeight: 600, fontSize: 13, border: 'none', cursor: connecting ? 'not-allowed' : 'pointer', opacity: connecting ? 0.6 : 1 }}>
+              {connecting ? 'Redirecting…' : 'Connect Bank Account'}
+            </button>
+          </div>
+        ) : !financials.onboarding_complete ? (
+          <div style={{ ...CARD, padding: '20px 16px', textAlign: 'center' }}>
+            <p style={{ fontSize: 14, color: '#fbbf24', fontFamily: 'Georgia, serif', marginBottom: 6 }}>Setup incomplete</p>
+            <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 16 }}>Complete your bank account setup to start receiving rent payments.</p>
+            {connectError && <p style={{ fontSize: 12, color: '#f87171', marginBottom: 12 }}>{connectError}</p>}
+            <button type="button" onClick={handleConnectBank} disabled={connecting}
+              style={{ padding: '10px 24px', borderRadius: 8, background: '#fbbf24', color: '#0d1b2e', fontWeight: 600, fontSize: 13, border: 'none', cursor: connecting ? 'not-allowed' : 'pointer', opacity: connecting ? 0.6 : 1 }}>
+              {connecting ? 'Redirecting…' : 'Continue Setup'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Rent KPIs */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ ...CARD, padding: '14px 16px' }}>
+                <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 4 }}>Collected</p>
+                <p style={{ fontSize: 22, color: '#4ade80', fontFamily: 'Georgia, serif' }}>{gbp(collectedThisMonth)}</p>
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>Paid this month</p>
+              </div>
+              <div style={{ ...CARD, padding: '14px 16px' }}>
+                <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 4 }}>Outstanding</p>
+                <p style={{ fontSize: 22, color: totalMonthlyRent - collectedThisMonth > 0 ? '#fbbf24' : '#4ade80', fontFamily: 'Georgia, serif' }}>{gbp(Math.max(0, totalMonthlyRent - collectedThisMonth))}</p>
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>{totalMonthlyRent - collectedThisMonth <= 0 ? 'All rent received' : 'Still to be paid'}</p>
+              </div>
+            </div>
+
+            {/* Payout history */}
+            {financials.payouts && financials.payouts.length > 0 && (
+              <div style={CARD}>
+                <div style={{ padding: '12px 16px 8px' }}>
+                  <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Recent Payouts</p>
+                </div>
+                {financials.payouts.map((p, i) => {
+                  const st = payoutStatusStyle(p.status)
+                  return (
+                    <div key={p.id}>
+                      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <div>
+                          <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{gbpFromStripe(p.amount)}</p>
+                          <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Paid to bank {fmtUnix(p.arrival_date)}</p>
+                        </div>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: st.bg, color: st.color, textTransform: 'capitalize', letterSpacing: '0.06em', flexShrink: 0 }}>{p.status.replace('_', ' ')}</span>
+                      </div>
+                      {i < (financials.payouts?.length ?? 0) - 1 && <div style={DIVIDER} />}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {financials.payouts?.length === 0 && (
+              <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No bank payments yet — they'll appear here once rent is processed.</p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div>
         <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 4 }}>Rent Statements</p>
         <p style={{ fontSize: 13, color: '#8899aa', fontWeight: 300 }}>Monthly statements showing rent collected, management fees, and net payments.</p>
@@ -1121,12 +1493,16 @@ function StatementsTab({ statements, isLoading, properties }: {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(74,222,128,0.1)', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{stmt.status}</span>
-                        {stmt.pdf_url && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" onClick={() => handleView(stmt)}
+                            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#c8d4e0', cursor: 'pointer' }}>
+                            View
+                          </button>
                           <button type="button" onClick={() => handleDownload(stmt)}
                             style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa', cursor: 'pointer' }}>
                             Download
                           </button>
-                        )}
+                        </div>
                       </div>
                     </div>
                     {i < byYear[yr].length - 1 && <div style={DIVIDER} />}
@@ -1137,6 +1513,51 @@ function StatementsTab({ statements, isLoading, properties }: {
           </div>
         ))
       )}
+
+      {viewingStatement && (
+        <StatementViewModal
+          stmt={viewingStatement}
+          html={buildStatementHtml(viewingStatement).html}
+          onClose={() => setViewingStatement(null)}
+          onDownload={() => handleDownload(viewingStatement)}
+        />
+      )}
+    </div>
+  )
+}
+
+function StatementViewModal({ stmt, html, onClose, onDownload }: {
+  stmt: Statement
+  html: string
+  onClose: () => void
+  onDownload: () => void
+}) {
+  const blobUrl = useMemo(() => {
+    const blob = new Blob([html], { type: 'text/html' })
+    return URL.createObjectURL(blob)
+  }, [html])
+
+  useEffect(() => {
+    return () => URL.revokeObjectURL(blobUrl)
+  }, [blobUrl])
+
+  const period = new Date(stmt.period).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#0d1b2e' }}>
+      <header style={{ background: '#091422', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <button type="button" onClick={onClose} style={{ fontSize: 13, color: '#8899aa', background: 'none', border: 'none', cursor: 'pointer' }}>✕ Close</button>
+        <span style={{ fontSize: 13, fontWeight: 500, color: '#e8edf5' }}>{period}</span>
+        <button type="button" onClick={onDownload}
+          style={{ fontSize: 12, fontWeight: 500, color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer' }}>
+          Download
+        </button>
+      </header>
+      <iframe
+        src={blobUrl}
+        title={`Statement ${period}`}
+        style={{ flex: 1, border: 'none', background: '#fff' }}
+      />
     </div>
   )
 }

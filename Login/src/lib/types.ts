@@ -77,6 +77,10 @@ export interface MaintenanceRequest {
   updated_at: string | null
   cost: number | null
   resolved_at: string | null
+  request_type: string | null
+  scheduled_at: string | null
+  completion_photo_urls: string[] | null
+  completion_document_url: string | null
 }
 
 export interface PortfolioStats {

@@ -5,6 +5,7 @@ import { initials, gbp, fmtDate, fmtDateTime, docUrl, timeAgo } from '../lib/uti
 import DashShell from '../components/DashShell'
 import EmptyState from '../components/EmptyState'
 import SettingsPage from './SettingsPage'
+import MessageThread from '../components/MessageThread'
 import { IconChart, IconPeople, IconHouse, IconGear, IconStaff, IconWrench, IconSterling, IconActivity, IconCalendar } from '../components/icons'
 
 function buildTabs(pendingViewings: number, todayViewings: number) {
@@ -35,6 +36,7 @@ type StaffRoleFilter = 'all' | 'admin' | 'master admin'
 interface MaintenanceRow { id: string; title: string | null; description: string | null; priority: string | null; status: string | null; created_at: string | null; property_id: string | null }
 type MaintenanceFilter = 'all' | 'open' | 'in_progress' | 'resolved' | 'compliance' | 'viewings'
 interface ViewingRequest { id: string; property_id: string | null; name: string; email: string; phone: string | null; preferred_date: string; preferred_time: string; message: string | null; status: string; created_at: string; properties: { address: string } | null }
+interface TenancyNotice { id: string; tenancy_id: string; tenant_id: string; property_id: string; notice_date: string; vacate_date: string; status: string; created_at: string; properties: { address: string } | null; profiles: { full_name: string | null; email: string } | null }
 interface ComplianceAlert { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; document_url: string | null; notes: string | null; properties: { address: string } | null }
 type PropStatus = 'active' | 'tenanted' | 'notice' | 'viewings' | 'for_let' | 'vacant'
 interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; profiles: { full_name: string | null; email: string } | null; purchase_price?: number | null }
@@ -131,6 +133,15 @@ export default function AdminDashboard() {
   const [userFilter, setUserFilter] = useState<UserRoleFilter>('all')
   const [userSearch, setUserSearch] = useState('')
 
+  // Invite modal
+  const [showInviteModal, setShowInviteModal] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'landlord' | 'tenant' | 'contractor'>('landlord')
+  const [inviteName, setInviteName] = useState('')
+  const [inviteSaving, setInviteSaving] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteSuccess, setInviteSuccess] = useState(false)
+
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [staffLoading, setStaffLoading] = useState(false)
   const [staffFilter, setStaffFilter] = useState<StaffRoleFilter>('all')
@@ -144,6 +155,7 @@ export default function AdminDashboard() {
   const [selectedMaintenance, setSelectedMaintenance] = useState<MaintenanceRow | null>(null)
   const [viewingRequests, setViewingRequests] = useState<ViewingRequest[]>([])
   const [viewingRequestsLoading, setViewingRequestsLoading] = useState(false)
+  const [tenancyNotices, setTenancyNotices] = useState<TenancyNotice[]>([])
   const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
   const [complianceAlertsLoading, setComplianceAlertsLoading] = useState(false)
   const [complianceAlertsLoaded, setComplianceAlertsLoaded] = useState(false)
@@ -260,13 +272,16 @@ export default function AdminDashboard() {
   const [workflowStarting, setWorkflowStarting] = useState(false)
 
   useEffect(() => {
-    // Load viewings immediately so the badge and notification card are ready on first render
     loadViewingRequests()
+    loadTenancyNotices()
 
     const channel = supabase
-      .channel('viewing_requests_inserts')
+      .channel('admin_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'viewing_requests' }, (payload) => {
         setViewingRequests(prev => [...prev, payload.new as ViewingRequest])
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tenancy_notices' }, () => {
+        loadTenancyNotices()
       })
       .subscribe()
 
@@ -615,11 +630,10 @@ export default function AdminDashboard() {
       const monthEnd = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
       const ytdStart = `${now2.getFullYear()}-01-01`
 
-      const [propsRes, tenanciesForCollRes, paymentsRes, allPaymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes] = await Promise.all([
+      const [propsRes, tenanciesForCollRes, paymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes] = await Promise.all([
         supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, profiles(full_name, email)'),
         supabase.from('tenancies').select('id, property_id, monthly_rent').eq('is_current', true),
         supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr),
-        supabase.from('payments').select('amount, due_date').gte('due_date', cutoffStr),
         supabase.from('payments').select('id, tenancy_id, amount, due_date, paid_date, status, payment_method, notes').gte('due_date', monthStart).lte('due_date', monthEnd),
         supabase.from('rent_payments').select('id, tenancy_id, amount, paid_at').in('status', ['succeeded', 'paid']).gte('paid_at', monthStart).lte('paid_at', monthEnd + 'T23:59:59'),
         supabase.from('rent_payments').select('amount, paid_at').in('status', ['succeeded', 'paid']).not('paid_at', 'is', null).gte('paid_at', cutoffStr),
@@ -647,34 +661,46 @@ export default function AdminDashboard() {
       const tenanciesForColl = (tenanciesForCollRes.data ?? []) as { id: string; property_id: string; monthly_rent: number | null }[]
       const thisMonthPays = (thisMonthPaysRes.data ?? []) as { id: string; tenancy_id: string; amount: number; due_date: string; paid_date: string | null; status: string | null; payment_method: string | null; notes: string | null }[]
       const stripeThisMonth = (stripeThisMonthRes.data ?? []) as { id: string; tenancy_id: string; amount: number; paid_at: string }[]
-      const tenancyByPropId: Record<string, { id: string; monthly_rent: number | null }> = {}
-      for (const t of tenanciesForColl) tenancyByPropId[t.property_id] = t
+      const tenanciesByPropId: Record<string, { id: string; monthly_rent: number | null }[]> = {}
+      for (const t of tenanciesForColl) {
+        if (!tenanciesByPropId[t.property_id]) tenanciesByPropId[t.property_id] = []
+        tenanciesByPropId[t.property_id].push(t)
+      }
       const collectionItems = [...allProps]
         .sort((a, b) => a.address.localeCompare(b.address))
         .map(prop => {
-          const tenancy = tenancyByPropId[prop.id]
+          const tenancies = tenanciesByPropId[prop.id] ?? []
           const isTenanted = prop.status === 'active' || prop.status === 'tenanted'
           const landlordEmail = prop.profiles?.[0]?.email ?? ''
           const landlordName = prop.profiles?.[0]?.full_name ?? ''
           if (!isTenanted) {
-            return { tenancyId: tenancy?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName }
+            return { tenancyId: tenancies[0]?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName }
           }
-          const manualPay = tenancy ? thisMonthPays.find(p => p.tenancy_id === tenancy.id) : undefined
-          const stripePay  = tenancy ? stripeThisMonth.find(p => p.tenancy_id === tenancy.id) : undefined
-          const isPaid = !!(manualPay?.paid_date) || !!stripePay
-          const collected = manualPay?.paid_date ? Number(manualPay.amount) : (stripePay ? Number(stripePay.amount) : 0)
+          const tenancyIds = tenancies.map(t => t.id)
+          const manualPays = thisMonthPays.filter(p => tenancyIds.includes(p.tenancy_id) && p.paid_date)
+          const stripePays = stripeThisMonth.filter(p => tenancyIds.includes(p.tenancy_id))
+          const expectedFromTenancies = tenancies.reduce((s, t) => s + Number(t.monthly_rent ?? 0), 0)
+          const expected = expectedFromTenancies > 0 ? expectedFromTenancies : Number(prop.monthly_rent ?? 0)
+          const collected = manualPays.reduce((s, p) => s + Number(p.amount), 0) + stripePays.reduce((s, p) => s + Number(p.amount), 0)
+          const isPaid = expected > 0 && collected >= expected
+          // For Mark Paid: target the first tenancy that hasn't been paid yet this month
+          const unpaidTenancy = tenancies.find(t =>
+            !thisMonthPays.find(p => p.tenancy_id === t.id && p.paid_date) &&
+            !stripeThisMonth.find(p => p.tenancy_id === t.id)
+          ) ?? tenancies[0]
+          const manualPay = unpaidTenancy ? thisMonthPays.find(p => p.tenancy_id === unpaidTenancy.id) : undefined
           return {
-            tenancyId: tenancy?.id ?? '',
+            tenancyId: unpaidTenancy?.id ?? '',
             propertyId: prop.id,
             address: prop.address,
-            expected: Number(tenancy?.monthly_rent ?? prop.monthly_rent ?? 0),
+            expected,
             collected,
             isPaid,
             isVacant: false,
             paymentId: manualPay?.id ?? null,
             dueDate: manualPay?.due_date ?? null,
-            paymentMethod: stripePay ? 'Stripe (online)' : (manualPay?.payment_method ?? null),
-            paymentNotes: manualPay?.notes ?? null,
+            paymentMethod: stripePays.length > 0 ? 'Stripe (online)' : (manualPays[0]?.payment_method ?? null),
+            paymentNotes: manualPays[0]?.notes ?? null,
             landlordEmail,
             landlordName,
           }
@@ -692,12 +718,9 @@ export default function AdminDashboard() {
         payByMonth[key] = (payByMonth[key] ?? 0) + Number(pay.amount ?? 0)
       }
 
-      // All payments due in period, grouped by due_date month (expected)
-      const expectedByMonth: Record<string, number> = {}
-      for (const pay of allPaymentsRes.data ?? []) {
-        const key = String(pay.due_date).slice(0, 7)
-        expectedByMonth[key] = (expectedByMonth[key] ?? 0) + Number(pay.amount ?? 0)
-      }
+      // Expected per month = the rent roll for active properties.
+      // Using sparse payment records as the denominator caused >100% rates whenever Stripe
+      // payments arrived for properties that had no manually-created payments row.
 
       // Maintenance cost by month
       const maintByMonth: Record<string, number> = {}
@@ -717,7 +740,7 @@ export default function AdminDashboard() {
           month: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
           date: key,
           rentCollected: payByMonth[key] ?? 0,
-          rentExpected: expectedByMonth[key] ?? 0,
+          rentExpected: rentRoll,
           maintenanceCost: maintByMonth[key] ?? 0,
         })
       }
@@ -761,6 +784,40 @@ export default function AdminDashboard() {
     setUsersLoading(false)
   }
 
+  function openInviteModal() {
+    setInviteEmail('')
+    setInviteRole('landlord')
+    setInviteName('')
+    setInviteError(null)
+    setInviteSuccess(false)
+    setShowInviteModal(true)
+  }
+
+  async function handleSendInvite() {
+    if (!inviteEmail.trim()) { setInviteError('Email address is required.'); return }
+    setInviteSaving(true)
+    setInviteError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ?? ''
+      const res = await supabase.functions.invoke('send-invite', {
+        body: { email: inviteEmail.trim(), role: inviteRole, name: inviteName.trim() || undefined },
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.error || res.data?.ok === false) {
+        setInviteError(res.data?.error ?? res.error?.message ?? 'Failed to send invite.')
+      } else {
+        setInviteSuccess(true)
+        // Refresh users list after a brief delay so the new row appears
+        setTimeout(() => { setUsersLoaded(false); loadUsers() }, 1200)
+      }
+    } catch (err) {
+      setInviteError(String(err))
+    } finally {
+      setInviteSaving(false)
+    }
+  }
+
   async function loadStaff() {
     setStaffLoading(true)
     const { data: userRows } = await supabase.from('users').select('id, email, full_name, role, status').in('role', ['admin', 'master admin']).order('full_name')
@@ -797,6 +854,23 @@ export default function AdminDashboard() {
       .order('preferred_date', { ascending: true })
     setViewingRequests((data ?? []) as unknown as ViewingRequest[])
     setViewingRequestsLoading(false)
+  }
+
+  async function loadTenancyNotices() {
+    const { data } = await supabase
+      .from('tenancy_notices')
+      .select('id, tenancy_id, tenant_id, property_id, notice_date, vacate_date, status, created_at, properties(address), profiles(full_name, email)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    setTenancyNotices((data ?? []) as unknown as TenancyNotice[])
+  }
+
+  async function acknowledgeNotice(noticeId: string, propertyId: string) {
+    await supabase.from('tenancy_notices').update({ status: 'acknowledged' }).eq('id', noticeId)
+    setTenancyNotices(prev => prev.filter(n => n.id !== noticeId))
+    // Navigate to the property so admin can start the notice workflow
+    const prop = adminProps.find(p => p.id === propertyId)
+    if (prop) { setSelectedProperty(prop); setTab('properties') }
   }
 
   async function sendViewingEmail(type: 'confirmed' | 'received' | 'cancelled', req: ViewingRequest) {
@@ -1269,6 +1343,7 @@ export default function AdminDashboard() {
   }
 
   async function navigateToRentProperty(propertyId: string) {
+    // Stay on the rent tab — the property detail panel renders on both 'properties' and 'rent'
     const cached = adminProps.find(p => p.id === propertyId)
     if (cached) { setSelectedProperty(cached); return }
     const { data } = await supabase
@@ -1395,6 +1470,46 @@ export default function AdminDashboard() {
       {tab === 'analytics' && (
         <div className="px-4 py-5 flex flex-col gap-5">
 
+          {/* ── Tenancy notices notification card ── */}
+          {tenancyNotices.length > 0 && (
+            <div style={{ background: '#1a1200', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24', display: 'inline-block', flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#fbbf24', fontWeight: 600 }}>Notice Received</span>
+                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 5, background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 700 }}>
+                    {tenancyNotices.length}
+                  </span>
+                </div>
+              </div>
+              {tenancyNotices.map((notice, idx, arr) => (
+                <div key={notice.id}>
+                  <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: '#e8edf5', margin: 0 }}>
+                        {notice.profiles?.full_name ?? notice.profiles?.email ?? 'Tenant'} has handed in notice
+                      </p>
+                      <p style={{ fontSize: 11, color: '#8899aa', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {notice.properties?.address ?? 'Unknown property'}
+                      </p>
+                      <p style={{ fontSize: 11, color: '#fbbf24', margin: '4px 0 0' }}>
+                        Notice given: {fmtDate(notice.notice_date)} · Vacating: {fmtDate(notice.vacate_date)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => acknowledgeNotice(notice.id, notice.property_id)}
+                      style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 600, flexShrink: 0 }}
+                    >
+                      Acknowledge →
+                    </button>
+                  </div>
+                  {idx < arr.length - 1 && <div style={{ height: 1, background: 'rgba(251,191,36,0.1)', margin: '0 16px' }} />}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* ── Viewing requests notification card ── */}
           {viewingRequests.filter(r => r.status === 'pending').length > 0 && (
             <div style={{ background: '#0f2744', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 12, overflow: 'hidden' }}>
@@ -1507,10 +1622,9 @@ export default function AdminDashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <DarkKPI title="Monthly Rent Roll" value={monthlyRentRoll > 0 ? gbp(monthlyRentRoll) : '—'} accent="#4ade80" />
                 <DarkKPI title="Occupancy" value={occupancyRate != null ? `${occupancyRate.toFixed(0)}%` : '—'} accent={occupancyRate != null && occupancyRate >= 80 ? '#4ade80' : '#fbbf24'} />
-                <DarkKPI title={`YTD Gross ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdGross) : '—'} accent="#60a5fa" />
                 <DarkKPI title={`YTD Net ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdNet) : '—'} accent={ytdNet >= 0 ? '#4ade80' : '#f87171'} />
                 <DarkKPI title="Collection Rate" value={totalExpected > 0 ? `${collectionRate.toFixed(1)}%` : '—'} accent={collectionRate >= 90 ? '#4ade80' : '#fbbf24'} />
-                <DarkKPI title={`Collected (${analyticsPeriod})`} value={gbp(totalCollected)} />
+                <DarkKPI title={`Commission (${analyticsPeriod})`} value={totalCollected > 0 ? gbp(totalCollected * 0.08) : '—'} accent="#4ade80" />
                 <DarkKPI title={`Maintenance (${analyticsPeriod})`} value={gbp(totalMaintenance)} accent="#fbbf24" />
               </div>
 
@@ -1664,11 +1778,17 @@ export default function AdminDashboard() {
                                 {!row.isPaid && <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>due</p>}
                               </div>
                               {!row.isPaid && (
-                                <button type="button"
-                                  onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate, landlordEmail: row.landlordEmail, landlordName: row.landlordName })}
-                                  style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                  Mark Paid
-                                </button>
+                                row.tenancyId
+                                  ? <button type="button"
+                                      onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate, landlordEmail: row.landlordEmail, landlordName: row.landlordName })}
+                                      style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                      Mark Paid
+                                    </button>
+                                  : <button type="button"
+                                      onClick={() => navigateToRentProperty(row.propertyId)}
+                                      style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(136,153,170,0.08)', border: '1px solid rgba(136,153,170,0.25)', color: '#8899aa', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                      Link tenant →
+                                    </button>
                               )}
                             </>
                           )}
@@ -1812,8 +1932,8 @@ export default function AdminDashboard() {
                 {/* Date */}
                 <div>
                   <p style={{ fontSize: 9, color: '#8899aa', marginBottom: 5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Date *</p>
-                  <input type="date" lang="en-GB" value={newViewingDate} min={todayStr} onChange={e => { setNewViewingDate(e.target.value); setNewViewingTime('') }}
-                    style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }} />
+                  <DateInput value={newViewingDate} onChange={iso => { setNewViewingDate(iso); setNewViewingTime('') }}
+                    style={{ width: '100%', padding: '9px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                 </div>
 
                 {/* Time slots */}
@@ -1992,6 +2112,11 @@ export default function AdminDashboard() {
           <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="search" placeholder="Search by name or email…" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
               style={{ flex: 1, background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#e8edf5', outline: 'none' }} />
+            <button type="button" onClick={openInviteModal}
+              style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, background: '#e8edf5', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#0d1b2e', cursor: 'pointer', letterSpacing: '0.02em' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+              Invite
+            </button>
             <button type="button" onClick={() => { setUsersLoaded(false); loadUsers() }}
               style={{ flexShrink: 0, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#8899aa', cursor: 'pointer' }}>
               Refresh
@@ -2066,6 +2191,107 @@ export default function AdminDashboard() {
                 </>
               )
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── INVITE MODAL ── */}
+      {showInviteModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(5,15,30,0.85)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowInviteModal(false) }}>
+          <div style={{ width: '100%', maxWidth: 480, background: '#0d1b2e', borderTopLeftRadius: 20, borderTopRightRadius: 20, border: '1px solid rgba(255,255,255,0.09)', padding: '24px 20px 36px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Handle bar */}
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.15)', alignSelf: 'center', marginBottom: 4 }} />
+
+            {inviteSuccess ? (
+              /* Success state */
+              <div style={{ textAlign: 'center', padding: '16px 0 8px' }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(74,222,128,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="#4ade80"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                </div>
+                <p style={{ fontSize: 17, fontFamily: 'Georgia, serif', color: '#e8edf5', marginBottom: 8 }}>Invite sent</p>
+                <p style={{ fontSize: 13, color: '#8899aa', lineHeight: 1.6 }}>
+                  An invitation email has been sent to <strong style={{ color: '#e8edf5' }}>{inviteEmail}</strong>.<br />
+                  They'll be added as a <strong style={{ color: '#e8edf5', textTransform: 'capitalize' }}>{inviteRole}</strong> when they accept.
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                  <button type="button" onClick={openInviteModal}
+                    style={{ flex: 1, padding: '12px 0', borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: '#e8edf5', fontSize: 13, cursor: 'pointer' }}>
+                    Invite another
+                  </button>
+                  <button type="button" onClick={() => setShowInviteModal(false)}
+                    style={{ flex: 1, padding: '12px 0', borderRadius: 10, background: '#e8edf5', border: 'none', color: '#0d1b2e', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Form state */
+              <>
+                <div>
+                  <p style={{ fontSize: 17, fontFamily: 'Georgia, serif', color: '#e8edf5', marginBottom: 4 }}>Invite a user</p>
+                  <p style={{ fontSize: 12, color: '#8899aa' }}>They'll receive an email with a link to access the platform.</p>
+                </div>
+
+                {/* Role selector */}
+                <div>
+                  <p style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 10 }}>Role</p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(['landlord', 'tenant', 'contractor'] as const).map(r => (
+                      <button key={r} type="button" onClick={() => setInviteRole(r)}
+                        style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `1px solid ${inviteRole === r ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`, background: inviteRole === r ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)', color: inviteRole === r ? '#60a5fa' : '#8899aa', fontSize: 12, fontWeight: inviteRole === r ? 600 : 400, cursor: 'pointer', textTransform: 'capitalize', letterSpacing: '0.03em' }}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8, display: 'block' }}>Email address</label>
+                  <input
+                    type="email"
+                    placeholder="name@example.com"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSendInvite()}
+                    autoFocus
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '12px 14px', fontSize: 14, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Name (optional) */}
+                <div>
+                  <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8, display: 'block' }}>Full name <span style={{ color: '#4a5878', letterSpacing: 0, textTransform: 'none' }}>(optional)</span></label>
+                  <input
+                    type="text"
+                    placeholder="e.g. James Taylor"
+                    value={inviteName}
+                    onChange={e => setInviteName(e.target.value)}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '12px 14px', fontSize: 14, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {inviteError && (
+                  <p style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '10px 12px', margin: 0 }}>
+                    {inviteError}
+                  </p>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button type="button" onClick={() => setShowInviteModal(false)}
+                    style={{ flex: 1, padding: '13px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#8899aa', fontSize: 13, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleSendInvite} disabled={inviteSaving || !inviteEmail.trim()}
+                    style={{ flex: 2, padding: '13px 0', borderRadius: 10, background: !inviteEmail.trim() ? 'rgba(232,237,245,0.2)' : inviteSaving ? 'rgba(232,237,245,0.5)' : '#e8edf5', border: 'none', color: !inviteEmail.trim() ? 'rgba(13,27,46,0.4)' : '#0d1b2e', fontSize: 13, fontWeight: 600, cursor: (inviteSaving || !inviteEmail.trim()) ? 'not-allowed' : 'pointer' }}>
+                    {inviteSaving ? 'Sending…' : 'Send invite'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2246,16 +2472,18 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>PRT Agreement</p>
               <div style={{ display: 'flex', gap: 6 }}>
-                {propertyTenancies.length === 0 && (
+                {/* Upload/Replace is always available — you can register a PRT with or without a linked tenant */}
+                {!prtLoading && (
+                  <button type="button" onClick={() => setShowAddPRTModal(true)}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
+                    + {prtDoc ? 'Replace' : 'Upload'} Agreement
+                  </button>
+                )}
+                {/* Create Tenancy only when there is nothing at all — no PRT and no tenancy */}
+                {!prtDoc && propertyTenancies.length === 0 && !prtLoading && (
                   <button type="button" onClick={() => openLinkTenantModal(selectedProperty.id)}
                     style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)', cursor: 'pointer' }}>
                     + Create Tenancy
-                  </button>
-                )}
-                {(propertyTenancies.length > 0 || prtDoc) && (
-                  <button type="button" onClick={() => setShowAddPRTModal(true)}
-                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                    + {prtDoc ? 'Replace' : 'Add'}
                   </button>
                 )}
               </div>
@@ -2263,7 +2491,7 @@ export default function AdminDashboard() {
             {prtLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>Loading…</p>
             ) : propertyTenancies.length === 0 && !prtDoc ? (
-              <p style={{ fontSize: 12, color: '#8899aa' }}>No active tenancy. Use "+ Create Tenancy" to register one.</p>
+              <p style={{ fontSize: 12, color: '#8899aa' }}>No agreement or tenancy registered. Upload a PRT agreement or use "+ Create Tenancy" in the Tenants section above.</p>
             ) : prtDoc ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -2288,7 +2516,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ) : (
-              <p style={{ fontSize: 12, color: '#f87171' }}>No PRT agreement registered. Use "+ Add" to record one.</p>
+              <p style={{ fontSize: 12, color: '#f87171' }}>No PRT agreement registered. Use "+ Upload Agreement" to record one.</p>
             )}
           </div>
 
@@ -2519,7 +2747,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Due date</p>
-                  <input type="date" lang="en-GB" value={newJobDueDate} onChange={e => setNewJobDueDate(e.target.value)}
+                  <DateInput value={newJobDueDate} onChange={setNewJobDueDate}
                     style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 <div>
@@ -2553,8 +2781,7 @@ export default function AdminDashboard() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
                       <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 8 }}>Set the tenant move-out date, then choose a turnaround track:</p>
-                      <input type="date" lang="en-GB" value={workflowMoveOutDate} onChange={e => setWorkflowMoveOutDate(e.target.value)}
-                        placeholder="Move-out date (defaults to today + 28)"
+                      <DateInput value={workflowMoveOutDate} onChange={setWorkflowMoveOutDate}
                         style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
                     </div>
                     <button type="button" disabled={workflowStarting} onClick={() => startWorkflow('good_condition')}
@@ -3114,13 +3341,8 @@ export default function AdminDashboard() {
                             onChange={e => setListingNewCouncilArea(e.target.value)}
                             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none' }}
                           />
-                          <input
-                            type="date"
-                            lang="en-GB"
-                            placeholder="Expiry date (optional)"
-                            value={listingNewExpiry}
-                            onChange={e => setListingNewExpiry(e.target.value)}
-                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none', colorScheme: 'dark' }}
+                          <DateInput value={listingNewExpiry} onChange={setListingNewExpiry}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 10px', fontSize: 12, color: '#e8edf5', outline: 'none' }}
                           />
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -3162,12 +3384,8 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 5 }}>Available From</p>
-                <input
-                  type="date"
-                  lang="en-GB"
-                  value={listingAvailableFrom}
-                  onChange={e => setListingAvailableFrom(e.target.value)}
-                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: listingAvailableFrom ? '#e8edf5' : '#8899aa', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }}
+                <DateInput value={listingAvailableFrom} onChange={setListingAvailableFrom}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
               <button
@@ -3653,7 +3871,16 @@ export default function AdminDashboard() {
         <AddPRTModal
           property={selectedProperty}
           onClose={() => setShowAddPRTModal(false)}
-          onSaved={(doc) => { setPrtDoc(doc); setShowAddPRTModal(false) }}
+          onSaved={(doc) => {
+            setPrtDoc(doc)
+            setShowAddPRTModal(false)
+            if (selectedProperty) {
+              const updated = { ...selectedProperty, status: 'active' as PropStatus }
+              setSelectedProperty(updated)
+              setAdminProps(prev => prev.map(p => p.id === selectedProperty.id ? updated : p))
+            }
+            setAnalyticsLoaded(false)
+          }}
         />
       )}
 
@@ -3725,7 +3952,14 @@ export default function AdminDashboard() {
             onSaved={() => {
               setAdminPropsLoaded(false)
               loadAdminProps()
-              if (selectedProperty?.id === linkTenantPropertyId) loadPropertyTenancy(linkTenantPropertyId)
+              if (selectedProperty?.id === linkTenantPropertyId) {
+                loadPropertyTenancy(linkTenantPropertyId)
+                // Reflect 'active' status locally and reload rent analytics
+                const updated = { ...selectedProperty, status: 'active' as PropStatus }
+                setSelectedProperty(updated)
+                setAdminProps(prev => prev.map(p => p.id === linkTenantPropertyId ? updated : p))
+              }
+              setAnalyticsLoaded(false)
             }}
           />
         ) : null
@@ -3763,8 +3997,8 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', display: 'block', marginBottom: 6 }}>Date Taken</label>
-                <input type="date" lang="en-GB" value={newMeterDate} onChange={(e) => setNewMeterDate(e.target.value)}
-                  style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }} />
+                <DateInput value={newMeterDate} onChange={setNewMeterDate}
+                  style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }} />
               </div>
               <div>
                 <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', display: 'block', marginBottom: 6 }}>Notes</label>
@@ -4043,6 +4277,19 @@ function AddPropertyModal({ landlords, onClose, onSaved }: {
 
 const PAYMENT_METHODS = ['Bank Transfer', 'Standing Order', 'Cash', 'Cheque', 'Other']
 
+// Reusable date input — always shows dd/mm/yyyy, stores YYYY-MM-DD in parent state.
+// isoToDMY / parseDMY are hoisted function declarations defined lower in this file.
+function DateInput({ value, onChange, style }: { value: string; onChange: (iso: string) => void; style?: React.CSSProperties }) {
+  const [display, setDisplay] = useState(() => isoToDMY(value))
+  useEffect(() => { setDisplay(isoToDMY(value)) }, [value])
+  return (
+    <input type="text" value={display}
+      onChange={e => { setDisplay(e.target.value); const iso = parseDMY(e.target.value); if (iso) onChange(iso) }}
+      placeholder="dd/mm/yyyy" maxLength={10} style={style}
+    />
+  )
+}
+
 function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landlordEmail, landlordName, adminId, adminRole, onClose, onSaved }: {
   tenancyId: string
   address: string
@@ -4150,7 +4397,7 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landl
               <input type="number" value={amount} onChange={e => setAmount(e.target.value)} min="0" step="0.01" style={INPUT_STYLE} />
             </FormField>
             <FormField label="Date Paid *">
-              <input type="date" lang="en-GB" value={paidDate} onChange={e => setPaidDate(e.target.value)} style={INPUT_STYLE} />
+              <DateInput value={paidDate} onChange={setPaidDate} style={INPUT_STYLE} />
             </FormField>
           </div>
           <FormField label="Notes">
@@ -4201,8 +4448,8 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
       is_current: true,
     })
     if (dbError) { setSaving(false); setError(dbError.message); return }
-    // Keep properties.monthly_rent in sync so the landlord dashboard reflects the new rent immediately
-    await supabase.from('properties').update({ monthly_rent: monthlyRent }).eq('id', property.id)
+    // Mark property as active and sync monthly_rent when a tenant is formally linked
+    await supabase.from('properties').update({ status: 'active', monthly_rent: monthlyRent }).eq('id', property.id)
     setSaving(false)
     onSaved(); onClose()
   }
@@ -4236,7 +4483,7 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
             </select>
           </FormField>
           <FormField label="Start Date *">
-            <input type="date" lang="en-GB" value={startDate} onChange={e => setStartDate(e.target.value)} style={INPUT_STYLE} />
+            <DateInput value={startDate} onChange={setStartDate} style={INPUT_STYLE} />
           </FormField>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <FormField label="Monthly Rent (£) *">
@@ -4950,12 +5197,8 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
                 </div>
                 <div>
                   <p style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 5 }}>Expiry Date <span style={{ color: '#8899aa', fontWeight: 400 }}>(renewal required every 3 years)</span></p>
-                  <input
-                    type="date"
-                    lang="en-GB"
-                    value={newExpiryDate}
-                    onChange={e => setNewExpiryDate(e.target.value)}
-                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }}
+                  <DateInput value={newExpiryDate} onChange={setNewExpiryDate}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }}
                   />
                 </div>
                 <button
@@ -5051,7 +5294,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   type HistEntry = { id: string; old_status: string | null; new_status: string | null; notes: string | null; created_at: string }
   type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null; compliance_template_url: string | null }
   type ContractorOption = { id: string; business_name: string | null; full_name: string | null; email: string }
-  type InvoiceRow = { id: string; invoice_number: string; total: number; status: string; description: string | null; created_at: string }
+  type InvoiceRow = { id: string; invoice_number: string; total: number; status: string; description: string | null; created_at: string; deduction_queued: boolean }
   type CommentRow = { id: string; author_id: string | null; author_name: string | null; body: string; created_at: string }
 
   const [fullReq, setFullReq] = useState<FullRequest | null>(null)
@@ -5064,7 +5307,9 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   const [costInput, setCostInput] = useState('')
   const [costSaving, setCostSaving] = useState(false)
   const [tenantName, setTenantName] = useState<string | null>(null)
+  const [tenantNotifPrefs, setTenantNotifPrefs] = useState<{ notif_email: boolean; notif_sms: boolean; phone: string | null } | null>(null)
   const [contractorName, setContractorName] = useState<string | null>(null)
+  const [contractorUserId, setContractorUserId] = useState<string | null>(null)
   const [propertyAddress, setPropertyAddress] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [localStatus, setLocalStatus] = useState(request.status ?? 'open')
@@ -5099,7 +5344,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
           .eq('maintenance_request_id', request.id)
           .order('created_at', { ascending: true }),
         supabase.from('contractor_invoices')
-          .select('id, invoice_number, total, status, description, created_at')
+          .select('id, invoice_number, total, status, description, created_at, deduction_queued')
           .eq('maintenance_request_id', request.id)
           .order('created_at', { ascending: true }),
         supabase.from('maintenance_comments')
@@ -5116,16 +5361,24 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
       const lookups: Promise<void>[] = []
       if (full?.tenant_id) {
         lookups.push((async () => {
-          const { data: u } = await supabase.from('users').select('full_name, email').eq('id', full.tenant_id!).maybeSingle()
-          if (u) { const user = u as { full_name: string | null; email: string }; setTenantName(user.full_name || user.email || null) }
+          const { data: u } = await supabase.from('users').select('full_name, email, notif_email, notif_sms, phone').eq('id', full.tenant_id!).maybeSingle()
+          if (u) {
+            const user = u as { full_name: string | null; email: string; notif_email: boolean | null; notif_sms: boolean | null; phone: string | null }
+            setTenantName(user.full_name || user.email || null)
+            setTenantNotifPrefs({ notif_email: user.notif_email ?? true, notif_sms: user.notif_sms ?? false, phone: user.phone })
+          }
         })())
       } else if (full?.tenancy_id) {
         lookups.push((async () => {
           const { data: ten } = await supabase.from('tenancies').select('tenant_id').eq('id', full.tenancy_id!).maybeSingle()
           const tid = (ten as { tenant_id: string | null } | null)?.tenant_id
           if (tid) {
-            const { data: u } = await supabase.from('users').select('full_name, email').eq('id', tid).maybeSingle()
-            if (u) { const user = u as { full_name: string | null; email: string }; setTenantName(user.full_name || user.email || null) }
+            const { data: u } = await supabase.from('users').select('full_name, email, notif_email, notif_sms, phone').eq('id', tid).maybeSingle()
+            if (u) {
+              const user = u as { full_name: string | null; email: string; notif_email: boolean | null; notif_sms: boolean | null; phone: string | null }
+              setTenantName(user.full_name || user.email || null)
+              setTenantNotifPrefs({ notif_email: user.notif_email ?? true, notif_sms: user.notif_sms ?? false, phone: user.phone })
+            }
           }
         })())
       }
@@ -5145,6 +5398,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
             if (!c) return
             const contractor = c as { business_name: string | null; user_id: string | null }
             if (contractor.user_id) {
+              setContractorUserId(String(contractor.user_id))
               const { data: u } = await supabase.from('users')
                 .select('full_name, email')
                 .eq('id', String(contractor.user_id))
@@ -5255,6 +5509,18 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
       setLocalStatus(newStatus)
       setFullReq(prev => prev ? { ...prev, updated_at: now, resolved_at: now } : prev)
       onUpdate?.(request.id, { status: newStatus })
+      // Best-effort: notify tenant the job has been resolved
+      if (fullReq?.tenant_id) {
+        try {
+          await supabase.from('notifications').insert({
+            user_id: fullReq.tenant_id,
+            type: 'job_resolved',
+            title: 'Maintenance resolved',
+            body: `Your maintenance request "${request.title ?? 'Untitled'}" has been resolved.`,
+            data: { request_id: request.id },
+          })
+        } catch { /* best-effort */ }
+      }
     } catch (err) {
       console.error('handleAcceptWork error:', err)
       setActionError('Failed to accept work.')
@@ -5363,9 +5629,21 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
     setActionSaving(true)
     setActionError(null)
     try {
-      const { error } = await supabase.from('contractor_invoices').update({ status: 'approved' }).eq('id', invoiceId)
+      const { error } = await supabase.from('contractor_invoices').update({ status: 'approved', deduction_queued: true }).eq('id', invoiceId)
       if (error) throw error
-      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, status: 'approved' } : inv))
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, status: 'approved', deduction_queued: true } : inv))
+      // Best-effort: notify contractor their invoice was approved
+      if (contractorUserId) {
+        try {
+          await supabase.from('notifications').insert({
+            user_id: contractorUserId,
+            type: 'invoice_approved',
+            title: 'Invoice approved',
+            body: `Your invoice for "${request.title ?? 'Untitled'}" has been approved.`,
+            data: { request_id: request.id, invoice_id: invoiceId },
+          })
+        } catch { /* best-effort */ }
+      }
     } catch (err) {
       console.error('handleApproveInvoice error:', err)
       setActionError('Failed to approve invoice.')
@@ -5381,9 +5659,36 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
       const { error } = await supabase.from('contractor_invoices').update({ status: 'rejected' }).eq('id', invoiceId)
       if (error) throw error
       setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, status: 'rejected' } : inv))
+      // Best-effort: notify contractor their invoice was rejected
+      if (contractorUserId) {
+        try {
+          await supabase.from('notifications').insert({
+            user_id: contractorUserId,
+            type: 'invoice_rejected',
+            title: 'Invoice rejected',
+            body: `Your invoice for "${request.title ?? 'Untitled'}" has been rejected. Please check your messages.`,
+            data: { request_id: request.id, invoice_id: invoiceId },
+          })
+        } catch { /* best-effort */ }
+      }
     } catch (err) {
       console.error('handleRejectInvoice error:', err)
       setActionError('Failed to reject invoice.')
+    } finally {
+      setActionSaving(false)
+    }
+  }
+
+  async function handleQueueDeduction(invoiceId: string, currentlyQueued: boolean) {
+    setActionSaving(true)
+    setActionError(null)
+    try {
+      const { error } = await supabase.from('contractor_invoices').update({ deduction_queued: !currentlyQueued }).eq('id', invoiceId)
+      if (error) throw error
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, deduction_queued: !currentlyQueued } : inv))
+    } catch (err) {
+      console.error('handleQueueDeduction error:', err)
+      setActionError('Failed to update deduction.')
     } finally {
       setActionSaving(false)
     }
@@ -5758,9 +6063,28 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
             <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', margin: 0 }}>Allocation</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: tenantName ? '#60a5fa' : '#8899aa', flexShrink: 0 }} />
-              <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <p style={{ fontSize: 12, color: '#8899aa' }}>Reported by</p>
                 <p style={{ fontSize: 13, color: '#e8edf5', fontWeight: 500 }}>{tenantName ?? 'Tenant'}</p>
+                {tenantNotifPrefs && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                    {tenantNotifPrefs.notif_email && (
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.25)' }}>
+                        Email
+                      </span>
+                    )}
+                    {tenantNotifPrefs.notif_sms && (
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)' }}>
+                        SMS{tenantNotifPrefs.phone ? ` · ${tenantNotifPrefs.phone}` : ''}
+                      </span>
+                    )}
+                    {!tenantNotifPrefs.notif_email && !tenantNotifPrefs.notif_sms && (
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(248,113,113,0.12)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }}>
+                        No notifications
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -5851,7 +6175,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
                       </span>
                     </div>
                     {inv.description && <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 6 }}>{inv.description}</p>}
-                    <p style={{ fontSize: 14, color: '#e8edf5', fontWeight: 600, marginBottom: inv.status === 'submitted' ? 10 : 0 }}>£{Number(inv.total).toFixed(2)}</p>
+                    <p style={{ fontSize: 14, color: '#e8edf5', fontWeight: 600, marginBottom: (inv.status === 'submitted' || inv.status === 'approved') ? 10 : 0 }}>£{Number(inv.total).toFixed(2)}</p>
                     {inv.status === 'submitted' && (
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button type="button" onClick={() => handleApproveInvoice(inv.id)} disabled={actionSaving}
@@ -5863,6 +6187,15 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
                           {actionSaving ? '…' : 'Reject'}
                         </button>
                       </div>
+                    )}
+                    {inv.status === 'approved' && (
+                      <button type="button" onClick={() => handleQueueDeduction(inv.id, inv.deduction_queued)} disabled={actionSaving}
+                        style={{ width: '100%', padding: '7px 0', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: actionSaving ? 0.5 : 1,
+                          background: inv.deduction_queued ? 'rgba(251,191,36,0.15)' : 'rgba(136,153,170,0.1)',
+                          border: inv.deduction_queued ? '1px solid rgba(251,191,36,0.35)' : '1px solid rgba(136,153,170,0.25)',
+                          color: inv.deduction_queued ? '#fbbf24' : '#8899aa' }}>
+                        {inv.deduction_queued ? '✓ Queued — deduct from next statement' : 'Deduct from next statement'}
+                      </button>
                     )}
                   </div>
                 )
@@ -5956,6 +6289,14 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
                   )
                 })
               })()}
+            </div>
+          )}
+
+          {/* Messaging threads — admin sees both tenant and contractor threads */}
+          {!loading && (
+            <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: '#e8edf5', marginBottom: 8 }}>Communication Threads</p>
+              <MessageThread requestId={request.id} />
             </div>
           )}
         </div>
@@ -6167,7 +6508,7 @@ function computeExpiry(type: string, issue: string): string | null {
   return addYearsToISO(iso, years)
 }
 
-function DateInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function DmyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <FormField label={label}>
       <input
@@ -6190,11 +6531,12 @@ function AddPRTModal({ property, onClose, onSaved }: {
   const [tenantName, setTenantName] = useState('')
   const [refNo, setRefNo] = useState('')
   const [signingDate, setSigningDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [monthlyRent, setMonthlyRent] = useState(String(property.monthly_rent ?? ''))
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isValid = tenantName.trim().length > 0
+  const isValid = tenantName.trim().length > 0 && parseFloat(monthlyRent) > 0
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -6216,8 +6558,23 @@ function AddPRTModal({ property, onClose, onSaved }: {
       url: uploadedUrl,
       uploaded_at: signingDate,
     }).select('id, label, url, uploaded_at').maybeSingle()
+    if (dbErr) { setError(dbErr.message); setSaving(false); return }
+
+    // Create a tenancy record so the rent tab shows "Mark Paid" immediately.
+    // tenant_id is left null until the tenant creates their account and gets linked.
+    const rent = parseFloat(monthlyRent)
+    await supabase.from('tenancies').insert({
+      property_id: property.id,
+      tenant_id: null,
+      start_date: signingDate,
+      monthly_rent: rent,
+      deposit: 0,
+      status: 'active',
+      is_current: true,
+    })
+
+    await supabase.from('properties').update({ status: 'active', monthly_rent: rent }).eq('id', property.id)
     setSaving(false)
-    if (dbErr) { setError(dbErr.message); return }
     if (data) onSaved(data as { id: string; label: string; url: string | null; uploaded_at: string })
   }
 
@@ -6236,15 +6593,27 @@ function AddPRTModal({ property, onClose, onSaved }: {
           <FormField label="Reference Number">
             <input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="Optional" style={INPUT_STYLE} />
           </FormField>
-          <FormField label="Signing Date">
-            <input type="date" lang="en-GB" value={signingDate} onChange={e => setSigningDate(e.target.value)} style={INPUT_STYLE} />
-          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <FormField label="Signing Date">
+              <DateInput value={signingDate} onChange={setSigningDate} style={INPUT_STYLE} />
+            </FormField>
+            <FormField label="Monthly Rent (£) *">
+              <input type="number" value={monthlyRent} onChange={e => setMonthlyRent(e.target.value)} placeholder="1200" min="0" style={INPUT_STYLE} />
+            </FormField>
+          </div>
           <FormField label="Upload PDF">
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 0', borderRadius: 8, border: '1px dashed rgba(255,255,255,0.2)', color: '#60a5fa', fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
               {file ? file.name : 'Choose PDF (optional)'}
               <input type="file" accept="application/pdf" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] ?? null)} />
             </label>
+            {file && (
+              <button type="button"
+                onClick={() => { const url = URL.createObjectURL(file); window.open(url, '_blank') }}
+                style={{ marginTop: 8, width: '100%', padding: '8px 0', borderRadius: 8, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa', fontSize: 12, cursor: 'pointer' }}>
+                Preview PDF
+              </button>
+            )}
           </FormField>
           {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
           <button type="submit" disabled={!isValid || saving}
@@ -6300,7 +6669,7 @@ function EditComplianceModal({ item, onClose, onSaved }: {
         <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 20 }}>{item.type}</p>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <DateInput label="Issue Date" value={issueDate} onChange={handleIssueDateChange} />
+            <DmyField label="Issue Date" value={issueDate} onChange={handleIssueDateChange} />
             <FormField label={expiryAuto ? 'Expiry Date (auto)' : 'Expiry Date'}>
               <input type="text" value={expiryDate} onChange={e => { setExpiryDate(e.target.value); setExpiryAuto(false) }}
                 placeholder="dd/mm/yyyy" maxLength={10} readOnly={expiryAuto}
@@ -6407,7 +6776,7 @@ function AddComplianceModal({ property, onClose, onSaved, onFileUploaded }: {
           </FormField>
           {certType === 'Inventory' || certType === 'Deposit Prescribed Information' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <DateInput label="Issue Date" value={issueDate} onChange={handleIssueDateChange} />
+              <DmyField label="Issue Date" value={issueDate} onChange={handleIssueDateChange} />
               <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)' }}>
                 <p style={{ fontSize: 12, color: '#60a5fa', lineHeight: 1.5 }}>
                   {certType === 'Deposit Prescribed Information'
@@ -6418,7 +6787,7 @@ function AddComplianceModal({ property, onClose, onSaved, onFileUploaded }: {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <DateInput label="Issue Date" value={issueDate} onChange={handleIssueDateChange} />
+              <DmyField label="Issue Date" value={issueDate} onChange={handleIssueDateChange} />
               <FormField label={expiryAuto ? 'Expiry Date (auto)' : 'Expiry Date'}>
                 <input
                   type="text"
