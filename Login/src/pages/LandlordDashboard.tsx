@@ -8,7 +8,7 @@ import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import EmptyState from '../components/EmptyState'
 import SettingsPage from './SettingsPage'
-import { IconGrid, IconHouse, IconWrench, IconDoc, IconGear, IconCheck, IconSearch, IconSterling } from '../components/icons'
+import { IconGrid, IconHouse, IconWrench, IconDoc, IconGear, IconCheck, IconSearch, IconSterling, IconChart } from '../components/icons'
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard',   icon: <IconGrid /> },
@@ -16,6 +16,7 @@ const TABS = [
   { id: 'maintenance', label: 'Maintenance', icon: <IconWrench /> },
   { id: 'documents',   label: 'Documents',   icon: <IconDoc /> },
   { id: 'statements',  label: 'Statements',  icon: <IconSterling /> },
+  { id: 'off-market',  label: 'Off Market',  icon: <IconChart /> },
   { id: 'settings',    label: 'Settings',    icon: <IconGear /> },
 ]
 
@@ -52,7 +53,7 @@ interface TenancyDetail {
 }
 
 interface PortfolioComplianceItem {
-  id: string; property_id: string; type: string; expiry_date: string | null
+  id: string; property_id: string; type: string; expiry_date: string | null; document_url?: string | null
 }
 interface StatusEntry {
   id: string; old_status: string | null; new_status: string | null
@@ -98,6 +99,7 @@ export default function LandlordDashboard() {
   const [financials, setFinancials] = useState<LandlordFinancials | null>(null)
   const [financialsLoading, setFinancialsLoading] = useState(false)
   const [setupBanner, setSetupBanner] = useState<'complete' | 'refresh' | null>(null)
+  const [propertyFilter, setPropertyFilter] = useState<'all' | 'let' | 'vacant'>('all')
 
   const loadData = useCallback(async () => {
     if (!user) return
@@ -112,7 +114,7 @@ export default function LandlordDashboard() {
         const [{ data: maint }, { data: docs }, { data: compliance }, { data: tenancyRows }] = await Promise.all([
           supabase.from('maintenance_requests').select('*').in('property_id', propIds).order('created_at', { ascending: false }),
           supabase.from('documents').select('*').in('property_id', propIds).order('expiry_date', { ascending: true }),
-          supabase.from('compliance_items').select('id, property_id, type, expiry_date').in('property_id', propIds),
+          supabase.from('compliance_items').select('id, property_id, type, expiry_date, document_url').in('property_id', propIds),
           supabase.from('tenancies').select('id').in('property_id', propIds).eq('is_current', true),
         ])
         setMaintenance((maint ?? []) as MaintenanceRequest[])
@@ -154,6 +156,20 @@ export default function LandlordDashboard() {
 
   const occupancyRate = stats.totalProperties > 0 ? (stats.occupiedProperties / stats.totalProperties) * 100 : 0
   const collectionRate = stats.totalMonthlyRent > 0 ? (stats.paidThisMonth / stats.totalMonthlyRent) * 100 : 0
+
+  const nextCompliance = allComplianceItems
+    .filter(c => c.expiry_date)
+    .sort((a, b) => new Date(a.expiry_date!).getTime() - new Date(b.expiry_date!).getTime())
+    .find(c => new Date(c.expiry_date!).getTime() >= Date.now() - 86400000 * 30) // soonest upcoming or up to 30 days past
+    ?? allComplianceItems.filter(c => c.expiry_date).sort((a, b) => new Date(b.expiry_date!).getTime() - new Date(a.expiry_date!).getTime())[0]
+
+  const nextComplianceDays = nextCompliance?.expiry_date
+    ? Math.ceil((new Date(nextCompliance.expiry_date).getTime() - Date.now()) / 86400000)
+    : null
+  const nextComplianceAccent = nextComplianceDays === null ? '#8899aa'
+    : nextComplianceDays < 0 ? '#f87171'
+    : nextComplianceDays <= 30 ? '#fbbf24'
+    : '#4ade80'
 
   const urgentDocCount = documents.filter(d => {
     if (!d.expiry_date) return false
@@ -229,9 +245,15 @@ export default function LandlordDashboard() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <KPICard title="Monthly Rent" value={gbp(stats.totalMonthlyRent)} subtitle={`${stats.occupiedProperties} of ${stats.totalProperties} let`} onClick={() => handleTabChange('statements')} />
-                <KPICard title="Paid" value={gbp(stats.paidThisMonth)} subtitle={percent(collectionRate) + ' this month'} accent={collectionRate >= 95 ? '#4ade80' : '#fbbf24'} />
-                <KPICard title="Occupancy" value={percent(occupancyRate, 0)} subtitle={`${stats.vacantProperties} vacant`} accent={occupancyRate === 100 ? '#4ade80' : '#e8edf5'} />
-                <KPICard title="Open Issues" value={String(stats.openMaintenance)} subtitle={stats.openMaintenance === 0 ? 'All clear' : 'Need attention'} accent={stats.openMaintenance > 0 ? '#f87171' : '#4ade80'} />
+                <KPICard title="Paid" value={gbp(stats.paidThisMonth)} subtitle={percent(collectionRate) + ' this month'} accent="#4ade80" onClick={() => handleTabChange('statements')} />
+                <KPICard title="Occupancy" value={percent(occupancyRate, 0)} subtitle={`${stats.vacantProperties} vacant`} accent={occupancyRate === 100 ? '#4ade80' : '#e8edf5'} onClick={() => handleTabChange('properties')} />
+                <KPICard
+                  title="Next Compliance"
+                  value={nextCompliance ? nextCompliance.type : '—'}
+                  subtitle={nextCompliance?.expiry_date ? `Expires ${shortDate(nextCompliance.expiry_date)} · Auto Renewal` : 'No certificates'}
+                  accent={nextComplianceAccent}
+                  onClick={() => handleTabChange('maintenance')}
+                />
               </div>
             )}
 
@@ -245,9 +267,9 @@ export default function LandlordDashboard() {
               ) : properties.length === 0 ? (
                 <EmptyState icon={<IconHouse />} title="No properties yet" subtitle="Your management company will add properties here" />
               ) : (
-                <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 snap-x">
+                <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8, margin: '0 -16px', paddingLeft: 16, paddingRight: 16, scrollSnapType: 'x mandatory' }}>
                   {properties.map((p) => (
-                    <button key={p.id} type="button" onClick={() => setSelectedProperty(p)} className="flex-shrink-0 snap-start active:opacity-70 transition-opacity">
+                    <button key={p.id} type="button" onClick={() => setSelectedProperty(p)} style={{ flexShrink: 0, scrollSnapAlign: 'start' }} className="active:opacity-70 transition-opacity">
                       <PropertyCarouselCard property={p} />
                     </button>
                   ))}
@@ -346,17 +368,36 @@ export default function LandlordDashboard() {
         {/* ── PROPERTIES ── */}
         {tab === 'properties' && (
           <div className="px-4 py-5 flex flex-col gap-3">
+            {/* Filter tabs */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+              {(['all', 'let', 'vacant'] as const).map(f => (
+                <button key={f} type="button" onClick={() => setPropertyFilter(f)}
+                  style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '1px solid', transition: 'all 0.15s',
+                    background: propertyFilter === f ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)',
+                    borderColor: propertyFilter === f ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.08)',
+                    color: propertyFilter === f ? '#60a5fa' : '#8899aa' }}>
+                  {f === 'all' ? 'All' : f === 'let' ? 'Let' : 'Vacant'}
+                </button>
+              ))}
+            </div>
             {isLoading ? (
               [...Array(3)].map((_, i) => <div key={i} style={{ ...CARD, height: 96, opacity: 0.4 }} className="animate-pulse" />)
             ) : properties.length === 0 ? (
               <EmptyState icon={<IconHouse />} title="No properties" subtitle="Properties will appear here once added" />
-            ) : (
-              properties.map((p) => (
-                <button key={p.id} type="button" onClick={() => setSelectedProperty(p)} className="w-full text-left active:opacity-70 transition-opacity">
-                  <PropertyListCard property={p} />
-                </button>
-              ))
-            )}
+            ) : (() => {
+              const filtered = propertyFilter === 'let'
+                ? properties.filter(p => p.is_active)
+                : propertyFilter === 'vacant'
+                  ? properties.filter(p => !p.is_active)
+                  : properties
+              return filtered.length === 0
+                ? <EmptyState icon={<IconHouse />} title={`No ${propertyFilter} properties`} subtitle="" />
+                : filtered.map(p => (
+                    <button key={p.id} type="button" onClick={() => setSelectedProperty(p)} className="w-full text-left active:opacity-70 transition-opacity">
+                      <PropertyListCard property={p} />
+                    </button>
+                  ))
+            })()}
           </div>
         )}
 
@@ -366,22 +407,7 @@ export default function LandlordDashboard() {
         )}
 
         {tab === 'documents' && (
-          <div className="px-4 py-5 flex flex-col gap-3">
-            {isLoading ? (
-              [...Array(3)].map((_, i) => <div key={i} style={{ ...CARD, height: 64, opacity: 0.4 }} className="animate-pulse" />)
-            ) : documents.length === 0 ? (
-              <EmptyState icon={<IconDoc />} title="No documents" subtitle="Property certificates and documents will appear here" />
-            ) : (
-              <div style={CARD}>
-                {documents.map((d, i) => (
-                  <div key={d.id}>
-                    <ExpiringDocRow doc={d} />
-                    {i < documents.length - 1 && <div style={DIVIDER} />}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <DocumentsTab documents={documents} isLoading={isLoading} properties={properties} complianceItems={allComplianceItems} />
         )}
 
         {tab === 'statements' && (
@@ -397,6 +423,22 @@ export default function LandlordDashboard() {
             totalMonthlyRent={stats.totalMonthlyRent}
             landlordName={user?.company_name ?? user?.full_name ?? 'Landlord'}
           />
+        )}
+
+        {tab === 'off-market' && (
+          <div className="px-4 py-5 flex flex-col gap-5">
+            <div>
+              <p style={{ fontSize: 26, fontWeight: 300, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Off Market</p>
+              <p style={{ fontSize: 13, color: '#8899aa', marginTop: 4 }}>Coming soon — off-market property opportunities and deals.</p>
+            </div>
+            <div style={{ ...CARD, padding: 40, textAlign: 'center' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#8899aa' }}>
+                <IconChart />
+              </div>
+              <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif', marginBottom: 6 }}>Nothing here yet</p>
+              <p style={{ fontSize: 12, color: '#8899aa' }}>This section will be built out shortly.</p>
+            </div>
+          </div>
         )}
 
         {tab === 'settings' && <SettingsPage />}
@@ -620,107 +662,147 @@ function PropertyDetailPanel({ property, onBack, onMaintenanceSelect }: { proper
       </header>
 
       <div className="px-4 py-5 flex flex-col gap-4">
-        {/* Property info */}
+        {/* Property header */}
         <div style={CARD}>
           <div style={{ padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+              <div>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Monthly Rent</p>
+                <p style={{ fontSize: 28, fontWeight: 300, color: '#4ade80', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
+                  {gbp(property.monthly_rent ?? 0)}<span style={{ fontSize: 13, color: '#8899aa' }}>/mo</span>
+                </p>
+              </div>
               <span style={{ fontSize: 10, fontWeight: 500, padding: '4px 10px', borderRadius: 4, letterSpacing: '0.08em', textTransform: 'uppercase', background: b.bg, color: b.color }}>
                 {property.is_active ? 'Let' : 'Vacant'}
               </span>
-              <p style={{ fontSize: 24, fontWeight: 300, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>
-                {gbp(property.monthly_rent ?? 0)}<span style={{ fontSize: 13, color: '#8899aa' }}>/mo</span>
-              </p>
             </div>
-            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: '#8899aa', flexWrap: 'wrap' }}>
-              {property.property_type && <span>{property.property_type.charAt(0).toUpperCase() + property.property_type.slice(1)}</span>}
-              {property.bedrooms != null && <span>{property.bedrooms} bedroom{property.bedrooms !== 1 ? 's' : ''}</span>}
-              {property.postcode && <span style={{ marginLeft: 'auto', fontSize: 11 }}>{property.postcode}</span>}
-            </div>
+            {(property.property_type || property.bedrooms != null || property.postcode) && (
+              <div style={{ display: 'flex', gap: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.07)', fontSize: 12, color: '#8899aa', flexWrap: 'wrap' }}>
+                {property.property_type && <span>{property.property_type.charAt(0).toUpperCase() + property.property_type.slice(1)}</span>}
+                {property.bedrooms != null && <span>{property.bedrooms} bedroom{property.bedrooms !== 1 ? 's' : ''}</span>}
+                {property.postcode && <span>{property.postcode}</span>}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Tenancy + Compliance KPIs */}
+        {/* Tenancy */}
         {loading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {[...Array(2)].map((_, i) => <div key={i} style={{ ...CARD, height: 96, opacity: 0.4 }} className="animate-pulse" />)}
-          </div>
-        ) : (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <TenancyKPI tenancy={tenancy ?? null} />
-              <ComplianceKPI docs={propertyDocs} />
-            </div>
-
-            {tenancy && (
-              <div style={CARD}>
-                {(tenancy.tenantName || tenancy.tenantEmail) && (
-                  <>
-                    <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13, fontWeight: 600, color: '#e8edf5' }}>
-                        {initials(tenancy.tenantName, tenancy.tenantEmail ?? '')}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{tenancy.tenantName ?? 'Tenant'}</p>
-                        {tenancy.tenantEmail && <p style={{ fontSize: 11, color: '#8899aa' }} className="truncate">{tenancy.tenantEmail}</p>}
-                      </div>
-                    </div>
-                    <div style={DIVIDER} />
-                  </>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '0 16px 16px' }}>
-                  {tenancy.start_date && <DetailItem label="Start" value={fmtDate(tenancy.start_date)} />}
-                  {tenancy.end_date && <DetailItem label="End" value={fmtDate(tenancy.end_date)} />}
-                  {tenancy.monthly_rent != null && <DetailItem label="Monthly Rent" value={gbp(tenancy.monthly_rent)} />}
-                  {tenancy.arrears_balance != null && tenancy.arrears_balance > 0 && (
-                    <DetailItem label="Arrears" value={gbp(tenancy.arrears_balance)} valueColor="#f87171" />
-                  )}
+          <div style={{ ...CARD, height: 120, opacity: 0.4 }} className="animate-pulse" />
+        ) : tenancy ? (
+          <div style={CARD}>
+            {(tenancy.tenantName || tenancy.tenantEmail) && (
+              <>
+                <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13, fontWeight: 600, color: '#e8edf5' }}>
+                    {initials(tenancy.tenantName, tenancy.tenantEmail ?? '')}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{tenancy.tenantName ?? 'Tenant'}</p>
+                    {tenancy.tenantEmail && <p style={{ fontSize: 11, color: '#8899aa' }} className="truncate">{tenancy.tenantEmail}</p>}
+                  </div>
                 </div>
                 <div style={DIVIDER} />
-                {/* Deposit compliance */}
-                <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Deposit Compliance</p>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                    <div>
-                      <p style={{ fontSize: 11, color: '#8899aa' }}>Scheme</p>
-                      <p style={{ fontSize: 13, color: tenancy.deposit_scheme ? '#4ade80' : '#f87171', marginTop: 2 }}>
-                        {tenancy.deposit_scheme ?? 'Not registered — required within 30 working days'}
-                      </p>
-                    </div>
-                    {tenancy.deposit_registered_date && (
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ fontSize: 11, color: '#8899aa' }}>Registered</p>
-                        <p style={{ fontSize: 12, color: '#e8edf5', marginTop: 2 }}>{fmtDate(tenancy.deposit_registered_date)}</p>
-                      </div>
-                    )}
-                  </div>
-                  {tenancy.last_rent_increase_date && (() => {
-                    const nextEligible = new Date(tenancy.last_rent_increase_date!)
-                    nextEligible.setFullYear(nextEligible.getFullYear() + 1)
-                    const eligible = nextEligible <= new Date()
-                    return (
-                      <div>
-                        <p style={{ fontSize: 11, color: '#8899aa' }}>Rent Increase</p>
-                        <p style={{ fontSize: 12, color: eligible ? '#4ade80' : '#8899aa', marginTop: 2 }}>
-                          {eligible ? 'Eligible now (12-month interval met)' : `Next eligible: ${fmtDate(nextEligible.toISOString().slice(0, 10))} — 3 months written notice required`}
-                        </p>
-                      </div>
-                    )
-                  })()}
+              </>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+              {([
+                tenancy.start_date ? { label: 'Start', value: fmtDate(tenancy.start_date) } : null,
+                { label: 'End', value: tenancy.end_date ? fmtDate(tenancy.end_date) : 'Ongoing' },
+                tenancy.deposit_scheme ? { label: 'Deposit Scheme', value: tenancy.deposit_scheme } : { label: 'Deposit Scheme', value: 'Not registered', valueColor: '#f87171' },
+                tenancy.deposit_registered_date ? { label: 'Deposit Registered', value: fmtDate(tenancy.deposit_registered_date) } : null,
+                tenancy.arrears_balance && tenancy.arrears_balance > 0 ? { label: 'Arrears', value: gbp(tenancy.arrears_balance), valueColor: '#f87171' } : null,
+              ] as ({ label: string; value: string; valueColor?: string } | null)[]).filter(Boolean).map((item, i, arr) => item && (
+                <div key={i} style={{ padding: '12px 16px', borderBottom: i < arr.length - 2 ? '1px solid rgba(255,255,255,0.05)' : 'none', borderRight: i % 2 === 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                  <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 3 }}>{item.label}</p>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: item.valueColor ?? '#e8edf5' }}>{item.value}</p>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+            {tenancy.last_rent_increase_date && (() => {
+              const nextEligible = new Date(tenancy.last_rent_increase_date!)
+              nextEligible.setFullYear(nextEligible.getFullYear() + 1)
+              const eligible = nextEligible <= new Date()
+              return (
+                <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                  <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 3 }}>Rent Review</p>
+                  <p style={{ fontSize: 12, color: eligible ? '#4ade80' : '#8899aa' }}>
+                    {eligible ? 'Eligible now — 12-month interval met' : `Next eligible: ${fmtDate(nextEligible.toISOString().slice(0, 10))}`}
+                  </p>
+                </div>
+              )
+            })()}
+          </div>
+        ) : (
+          <div style={{ ...CARD, padding: '14px 16px' }}>
+            <p style={{ fontSize: 12, color: '#8899aa' }}>No active tenancy</p>
+          </div>
+        )}
 
-            {propertyDocs.length > 0 && (
-              <div style={CARD}>
-                {propertyDocs.map((d, i) => (
-                  <div key={d.id}>
-                    <ExpiringDocRow doc={d} />
-                    {i < propertyDocs.length - 1 && <div style={DIVIDER} />}
-                  </div>
-                ))}
+        {/* Compliance */}
+        {!loading && (
+          <div>
+            <SectionHeader title="Compliance" />
+            <div style={CARD}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px' }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: property.pre_tenancy_check_completed ? '#4ade80' : '#f87171', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, color: '#e8edf5' }}>Pre-Tenancy Repairing Standard</p>
+                  <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>
+                    {property.pre_tenancy_check_completed
+                      ? `Completed${property.pre_tenancy_check_date ? ` · ${fmtDate(property.pre_tenancy_check_date)}` : ''}`
+                      : 'Not completed — required by law'}
+                  </p>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 500, color: property.pre_tenancy_check_completed ? '#4ade80' : '#f87171', flexShrink: 0 }}>
+                  {property.pre_tenancy_check_completed ? 'Done' : 'Required'}
+                </span>
               </div>
-            )}
-          </>
+              {complianceItems.map((item) => {
+                const expiry = item.expiry_date ? new Date(item.expiry_date) : null
+                const daysUntil = expiry ? Math.ceil((expiry.getTime() - Date.now()) / 86400000) : null
+                const color = daysUntil == null ? '#8899aa' : daysUntil < 0 ? '#f87171' : daysUntil < 60 ? '#fbbf24' : '#4ade80'
+                const bg = daysUntil == null ? 'rgba(136,153,170,0.1)' : daysUntil < 0 ? 'rgba(248,113,113,0.1)' : daysUntil < 60 ? 'rgba(251,191,36,0.1)' : 'rgba(74,222,128,0.1)'
+                const statusLabel = daysUntil == null ? '—' : daysUntil < 0 ? 'Expired' : daysUntil < 60 ? `${daysUntil}d` : 'Valid'
+                return (
+                  <div key={item.id}>
+                    <div style={DIVIDER} />
+                    <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{item.type}</p>
+                        {item.expiry_date && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Expires {fmtDate(item.expiry_date)}</p>}
+                        {item.issue_date && <p style={{ fontSize: 11, color: '#8899aa' }}>Issued {fmtDate(item.issue_date)}</p>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        {item.document_url && (
+                          <a href={item.document_url} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 11, color: '#60a5fa', textDecoration: 'none', padding: '2px 8px', borderRadius: 4, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)' }}>
+                            PDF
+                          </a>
+                        )}
+                        <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 4, background: bg, color }}>{statusLabel}</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Documents */}
+        {!loading && propertyDocs.length > 0 && (
+          <div>
+            <SectionHeader title="Documents" />
+            <div style={CARD}>
+              {propertyDocs.map((d, i) => (
+                <div key={d.id}>
+                  <ExpiringDocRow doc={d} />
+                  {i < propertyDocs.length - 1 && <div style={DIVIDER} />}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Maintenance */}
@@ -742,112 +824,6 @@ function PropertyDetailPanel({ property, onBack, onMaintenanceSelect }: { proper
             </div>
           )}
         </div>
-
-        {/* Pre-tenancy Repairing Standard status */}
-        <div style={{ ...CARD, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12, borderColor: property.pre_tenancy_check_completed ? 'rgba(255,255,255,0.07)' : 'rgba(248,113,113,0.3)' }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: property.pre_tenancy_check_completed ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            {property.pre_tenancy_check_completed
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="#4ade80"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="#f87171"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-            }
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 2 }}>Pre-Tenancy Repairing Standard Check</p>
-            <p style={{ fontSize: 12, color: property.pre_tenancy_check_completed ? '#4ade80' : '#f87171', lineHeight: 1.4 }}>
-              {property.pre_tenancy_check_completed
-                ? `Completed${property.pre_tenancy_check_date ? ` — ${fmtDate(property.pre_tenancy_check_date)}` : ''}`
-                : 'Not completed — required by law before advertising or letting'}
-            </p>
-          </div>
-        </div>
-
-        {/* Required Certifications Checklist */}
-        {!loading && (() => {
-          const today = new Date()
-          const in60 = new Date(); in60.setDate(today.getDate() + 60)
-          const required = [
-            ...(property.has_gas ? [{ key: 'gas', label: 'Gas Safety Certificate', hint: 'Annual — Gas Safe registered contractor' }] : []),
-            { key: 'eicr', label: 'EICR (Electrical)', hint: 'Every 5 years' },
-            { key: 'epc', label: 'EPC', hint: '10-year validity — required on all adverts' },
-            { key: 'legionella', label: 'Legionella Risk Assessment', hint: 'Legally required — duty of care' },
-            { key: 'smoke', label: 'Smoke / Heat / CO Alarms', hint: 'Tolerable Standard from Feb 2022' },
-          ]
-          type CertStatus = 'missing' | 'expired' | 'expiring' | 'valid'
-          const certs = required.map(cert => {
-            const match = complianceItems.find(c => c.type.toLowerCase().includes(cert.key))
-            if (!match) return { ...cert, status: 'missing' as CertStatus, expiry: null }
-            if (cert.key === 'smoke' || !match.expiry_date) return { ...cert, status: 'valid' as CertStatus, expiry: match.expiry_date ?? null }
-            const expiry = new Date(match.expiry_date)
-            if (expiry < today) return { ...cert, status: 'expired' as CertStatus, expiry: match.expiry_date }
-            if (expiry <= in60) return { ...cert, status: 'expiring' as CertStatus, expiry: match.expiry_date }
-            return { ...cert, status: 'valid' as CertStatus, expiry: match.expiry_date }
-          })
-          const hasIssues = certs.some(c => c.status !== 'valid')
-          if (!hasIssues) return null
-          return (
-            <div>
-              <SectionHeader title="Required Certifications" />
-              <div style={CARD}>
-                {certs.map((cert, i) => {
-                  const color = cert.status === 'valid' ? '#4ade80' : cert.status === 'expiring' ? '#fbbf24' : '#f87171'
-                  const label = cert.status === 'missing' ? 'Missing' : cert.status === 'expired' ? 'Expired' : cert.status === 'expiring' ? `Exp ${fmtDate(cert.expiry)}` : 'Valid'
-                  return (
-                    <div key={cert.key}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px' }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 13, color: '#e8edf5' }}>{cert.label}</p>
-                          <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>{cert.hint}</p>
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 500, color, flexShrink: 0 }}>{label}</span>
-                      </div>
-                      {i < certs.length - 1 && <div style={DIVIDER} />}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Compliance Certificates */}
-        {complianceItems.length > 0 && (
-          <div>
-            <SectionHeader title="Compliance Certificates" />
-            <div style={CARD}>
-              {complianceItems.map((item, i) => {
-                const expiry = item.expiry_date ? new Date(item.expiry_date) : null
-                const daysUntil = expiry ? Math.ceil((expiry.getTime() - Date.now()) / 86400000) : null
-                const color = daysUntil == null ? '#8899aa' : daysUntil < 0 ? '#f87171' : daysUntil < 60 ? '#fbbf24' : '#4ade80'
-                const bg = daysUntil == null ? 'rgba(136,153,170,0.1)' : daysUntil < 0 ? 'rgba(248,113,113,0.1)' : daysUntil < 60 ? 'rgba(251,191,36,0.1)' : 'rgba(74,222,128,0.1)'
-                const statusLabel = daysUntil == null ? '—' : daysUntil < 0 ? 'Expired' : daysUntil < 60 ? `${daysUntil}d` : 'Valid'
-                return (
-                  <div key={item.id}>
-                    <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{item.type}</p>
-                        {item.expiry_date && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Expires {fmtDate(item.expiry_date)}</p>}
-                        {item.issue_date && <p style={{ fontSize: 11, color: '#8899aa' }}>Issued {fmtDate(item.issue_date)}</p>}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        {item.document_url && (
-                          <a href={item.document_url} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 11, color: '#60a5fa', textDecoration: 'none', padding: '2px 8px', borderRadius: 4, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)' }}>
-                            PDF
-                          </a>
-                        )}
-                        <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 4, background: bg, color }}>
-                          {statusLabel}
-                        </span>
-                      </div>
-                    </div>
-                    {i < complianceItems.length - 1 && <div style={DIVIDER} />}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
@@ -1061,36 +1037,40 @@ function PropertyCarouselCard({ property }: { property: Property }) {
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color }} />
         <span style={{ fontSize: 10, fontWeight: 500, color: b.color }}>{property.is_active ? 'Let' : 'Vacant'}</span>
       </div>
-      <div style={{ flex: 1 }} />
-      <p style={{ fontSize: 13, color: '#e8edf5', lineHeight: 1.3, fontFamily: 'Georgia, serif' }} className="line-clamp-2">{property.address}</p>
-      <p style={{ fontSize: 12, color: '#8899aa', marginTop: 4 }}>{gbp(property.monthly_rent ?? 0)}/mo</p>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <p style={{ fontSize: 13, color: '#e8edf5', lineHeight: 1.3, fontFamily: 'Georgia, serif' }} className="line-clamp-2">{property.address}</p>
+        <p style={{ fontSize: 12, color: '#8899aa', marginTop: 4 }}>{gbp(property.monthly_rent ?? 0)}/mo</p>
+      </div>
     </div>
   )
 }
 
 function PropertyListCard({ property }: { property: Property }) {
   const b = statusBadge(property.is_active ? 'let' : 'vacant')
+  const meta = [
+    property.postcode,
+    property.bedrooms != null ? `${property.bedrooms} bed` : null,
+    property.property_type ? property.property_type.charAt(0).toUpperCase() + property.property_type.slice(1) : null,
+  ].filter(Boolean).join(' · ')
   return (
-    <div style={{ ...CARD, padding: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{property.address}</p>
-          {property.postcode && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>{property.postcode}</p>}
-          <p style={{ fontSize: 13, color: '#e8edf5', marginTop: 6, fontFamily: 'Georgia, serif' }}>{gbp(property.monthly_rent ?? 0)}/mo</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+    <div style={{ ...CARD, padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+        <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif', flex: 1, minWidth: 0 }} className="truncate">
+          {property.address}
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, letterSpacing: '0.08em', textTransform: 'uppercase', background: b.bg, color: b.color }}>
             {property.is_active ? 'Let' : 'Vacant'}
           </span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="#8899aa"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
         </div>
       </div>
-      {(property.bedrooms != null || property.property_type) && (
-        <div style={{ display: 'flex', gap: 10, marginTop: 8, fontSize: 11, color: '#8899aa' }}>
-          {property.bedrooms != null && <span>{property.bedrooms} bed</span>}
-          {property.property_type && <span>{property.property_type.charAt(0).toUpperCase() + property.property_type.slice(1)}</span>}
-        </div>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {meta ? <p style={{ fontSize: 11, color: '#8899aa' }}>{meta}</p> : <span />}
+        <p style={{ fontSize: 20, fontWeight: 300, color: '#4ade80', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
+          {gbp(property.monthly_rent ?? 0)}<span style={{ fontSize: 11, color: '#8899aa' }}>/mo</span>
+        </p>
+      </div>
     </div>
   )
 }
@@ -1125,42 +1105,188 @@ function MaintenanceIssueRow({ request }: { request: MaintenanceRequest }) {
   )
 }
 
-function TenancyKPI({ tenancy }: { tenancy: TenancyDetail | null }) {
-  if (!tenancy) return (
-    <div style={CARD}>
-      <div style={{ padding: 14 }}>
-        <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Tenancy</p>
-        <p style={{ fontSize: 18, fontWeight: 300, color: '#f87171', fontFamily: 'Georgia, serif' }}>Vacant</p>
-        <p style={{ fontSize: 11, color: '#8899aa', marginTop: 3 }}>No active tenancy</p>
-      </div>
-    </div>
-  )
-  return (
-    <div style={CARD}>
-      <div style={{ padding: 14 }}>
-        <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Tenancy</p>
-        <p style={{ fontSize: 15, color: '#4ade80', fontFamily: 'Georgia, serif' }} className="truncate">{tenancy.tenantName ?? 'Tenant'}</p>
-        <p style={{ fontSize: 11, color: '#8899aa', marginTop: 3 }}>{tenancy.monthly_rent != null ? `${gbp(tenancy.monthly_rent)}/mo` : 'Active'}</p>
-      </div>
-    </div>
-  )
+// Maps document table `type` values → unified group key
+const DOC_TYPE_TO_GROUP: Record<string, string> = {
+  tenancy_agreement: 'tenancy_agreement',
+  gas_cert: 'gas_safety',
+  eicr: 'eicr',
+  epc: 'epc',
+  inventory: 'inventory',
+  other: 'other',
+}
+// Maps compliance_items `type` strings → unified group key
+const COMPLIANCE_TYPE_TO_GROUP: Record<string, string> = {
+  'Gas Safety Certificate': 'gas_safety',
+  'EICR': 'eicr',
+  'EPC': 'epc',
+  'Inventory': 'inventory',
+  'Legionella Risk Assessment': 'legionella',
+  'PAT Testing': 'pat_testing',
+  'Smoke / Heat / CO Alarms': 'smoke_alarms',
+  'Deposit Prescribed Information': 'deposit_info',
+}
+const GROUP_LABELS: Record<string, string> = {
+  tenancy_agreement: 'Tenancy Agreements',
+  gas_safety: 'Gas Safety Certificates',
+  eicr: 'EICR',
+  epc: 'EPC',
+  inventory: 'Inventory Reports',
+  legionella: 'Legionella Risk Assessment',
+  pat_testing: 'PAT Testing',
+  smoke_alarms: 'Smoke / Heat / CO Alarms',
+  deposit_info: 'Deposit Prescribed Information',
+  other: 'Other Documents',
+}
+const GROUP_ORDER = ['tenancy_agreement', 'gas_safety', 'eicr', 'epc', 'inventory', 'legionella', 'pat_testing', 'smoke_alarms', 'deposit_info', 'other']
+
+interface UnifiedDocItem {
+  id: string; property_id: string; label: string; expiry_date: string | null; url: string | null
 }
 
-function ComplianceKPI({ docs }: { docs: PropertyDocument[] }) {
-  const today = new Date(); const in30 = new Date(); in30.setDate(today.getDate() + 30)
-  const expiredCount = docs.filter((d) => d.expiry_date && new Date(d.expiry_date) < today).length
-  const expiringSoonCount = docs.filter((d) => { if (!d.expiry_date) return false; const exp = new Date(d.expiry_date); return exp >= today && exp <= in30 }).length
-  const allClear = expiredCount === 0 && expiringSoonCount === 0
-  const color = expiredCount > 0 ? '#f87171' : expiringSoonCount > 0 ? '#fbbf24' : '#4ade80'
-  const value = allClear ? 'All Clear' : expiredCount > 0 ? `${expiredCount} Expired` : `${expiringSoonCount} Due`
-  const subtitle = allClear ? (docs.length === 0 ? 'No documents' : `${docs.length} current`) : expiredCount > 0 ? 'Action required' : 'Expiring soon'
+function DocumentsTab({ documents, isLoading, properties, complianceItems }: {
+  documents: PropertyDocument[]; isLoading: boolean; properties: Property[]; complianceItems: PortfolioComplianceItem[]
+}) {
+  const propMap = Object.fromEntries(properties.map(p => [p.id, p.address]))
+
+  const byGroup: Record<string, UnifiedDocItem[]> = {}
+  function addToGroup(key: string, item: UnifiedDocItem) {
+    if (!byGroup[key]) byGroup[key] = []
+    byGroup[key].push(item)
+  }
+
+  for (const d of documents) {
+    const key = DOC_TYPE_TO_GROUP[d.type] ?? 'other'
+    addToGroup(key, { id: `doc-${d.id}`, property_id: d.property_id, label: d.label, expiry_date: d.expiry_date, url: d.url })
+  }
+  for (const c of complianceItems) {
+    const key = COMPLIANCE_TYPE_TO_GROUP[c.type] ?? 'other'
+    addToGroup(key, { id: `comp-${c.id}`, property_id: c.property_id, label: c.type, expiry_date: c.expiry_date, url: c.document_url ?? null })
+  }
+
+  // Deduplicate within each group by property_id (prefer compliance item if both exist)
+  for (const key of Object.keys(byGroup)) {
+    const seen = new Set<string>()
+    byGroup[key] = byGroup[key].filter(item => {
+      const dedupKey = `${item.property_id}-${item.id.startsWith('comp-') ? 'comp' : 'doc'}`
+      if (seen.has(dedupKey)) return false
+      seen.add(dedupKey)
+      return true
+    })
+  }
+
+  const [selectedPropId, setSelectedPropId] = useState<string | null>(null)
+
+  // Filter items by selected property before grouping display
+  const filteredByGroup: Record<string, UnifiedDocItem[]> = {}
+  for (const [key, items] of Object.entries(byGroup)) {
+    const filtered = selectedPropId ? items.filter(i => i.property_id === selectedPropId) : items
+    if (filtered.length) filteredByGroup[key] = filtered
+  }
+
+  const groupKeys = GROUP_ORDER.filter(k => filteredByGroup[k]?.length)
+    .concat(Object.keys(filteredByGroup).filter(k => !GROUP_ORDER.includes(k) && filteredByGroup[k]?.length))
+
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set(groupKeys.slice(0, 1)))
+  function toggleGroup(key: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  const hasAny = documents.length > 0 || complianceItems.length > 0
+
   return (
-    <div style={CARD}>
-      <div style={{ padding: 14 }}>
-        <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Compliance</p>
-        <p style={{ fontSize: 18, fontWeight: 300, color, fontFamily: 'Georgia, serif' }}>{value}</p>
-        <p style={{ fontSize: 11, color: '#8899aa', marginTop: 3 }}>{subtitle}</p>
-      </div>
+    <div className="px-4 py-5 flex flex-col gap-5">
+      {isLoading ? (
+        [...Array(3)].map((_, i) => <div key={i} style={{ ...CARD, height: 64, opacity: 0.4 }} className="animate-pulse" />)
+      ) : !hasAny ? (
+        <EmptyState icon={<IconDoc />} title="No documents" subtitle="Property certificates and documents will appear here" />
+      ) : (
+        <>
+          {/* Property filter */}
+          <select
+            value={selectedPropId ?? ''}
+            onChange={e => setSelectedPropId(e.target.value || null)}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 13,
+              background: '#112240', border: '1px solid rgba(255,255,255,0.12)',
+              color: '#e8edf5', cursor: 'pointer', appearance: 'none',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%238899aa'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
+            <option value="">All Properties</option>
+            {properties.map(p => (
+              <option key={p.id} value={p.id}>{p.address}</option>
+            ))}
+          </select>
+
+          {groupKeys.map(groupKey => {
+          const items = filteredByGroup[groupKey]
+          const label = GROUP_LABELS[groupKey] ?? groupKey
+          const isOpen = expandedGroups.has(groupKey)
+          return (
+            <div key={groupKey} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <p style={{ fontSize: 16, fontFamily: 'Georgia, serif', color: '#e8edf5', fontWeight: 400 }}>{label}</p>
+                <button type="button" onClick={() => toggleGroup(groupKey)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#c8d4e0',
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 8, padding: '5px 12px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span>Documents</span>
+                  <span style={{ fontSize: 11, display: 'inline-block', transition: 'transform 0.2s',
+                    transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▾</span>
+                </button>
+              </div>
+              <div style={DIVIDER} />
+              {isOpen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {items.map(item => {
+                    const expiry = item.expiry_date ? new Date(item.expiry_date) : null
+                    const days = expiry ? Math.ceil((expiry.getTime() - Date.now()) / 86400000) : null
+                    const isExpired = days !== null && days < 0
+                    const isSoon = days !== null && days >= 0 && days <= 30
+                    const expiryColor = isExpired ? '#f87171' : isSoon ? '#fbbf24' : '#4ade80'
+                    return (
+                      <div key={item.id} style={{ ...CARD, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">
+                            {propMap[item.property_id] ?? item.label}
+                          </p>
+                          {expiry ? (
+                            <p style={{ fontSize: 11, color: expiryColor, marginTop: 4 }}>
+                              {isExpired ? `Expired ${shortDate(item.expiry_date!)}` : `Expires ${shortDate(item.expiry_date!)} · ${days}d`}
+                            </p>
+                          ) : (
+                            <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>No expiry date</p>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                          {expiry && (
+                            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                              background: isExpired ? 'rgba(248,113,113,0.1)' : isSoon ? 'rgba(251,191,36,0.1)' : 'rgba(74,222,128,0.1)',
+                              color: expiryColor, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                              {isExpired ? 'Expired' : isSoon ? 'Due Soon' : 'Current'}
+                            </span>
+                          )}
+                          {item.url && (
+                            <a href={item.url} target="_blank" rel="noopener noreferrer"
+                              style={{ fontSize: 11, color: '#60a5fa', textDecoration: 'none',
+                                padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(96,165,250,0.25)',
+                                background: 'rgba(96,165,250,0.08)' }}>
+                              View
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        </>
+      )}
     </div>
   )
 }
@@ -1185,15 +1311,6 @@ function ExpiringDocRow({ doc }: { doc: PropertyDocument }) {
           {isExpired ? 'Expired' : `${days}d`}
         </span>
       )}
-    </div>
-  )
-}
-
-function DetailItem({ label, value, valueColor = '#e8edf5' }: { label: string; value: string; valueColor?: string }) {
-  return (
-    <div>
-      <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>{label}</p>
-      <p style={{ fontSize: 12, fontWeight: 500, color: valueColor, marginTop: 3 }}>{value}</p>
     </div>
   )
 }
@@ -1225,6 +1342,17 @@ function StatementsTab({ statements, isLoading, properties, financials, financia
   const [connectError, setConnectError] = useState<string | null>(null)
   const [viewingStatement, setViewingStatement] = useState<Statement | null>(null)
   const propMap = Object.fromEntries(properties.map(p => [p.id, p.address]))
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => {
+    const first = statements.map(s => s.period.slice(0, 7)).sort((a, b) => b.localeCompare(a))[0]
+    return new Set(first ? [first] : [])
+  })
+  function toggleMonth(mo: string) {
+    setExpandedMonths(prev => {
+      const next = new Set(prev)
+      next.has(mo) ? next.delete(mo) : next.add(mo)
+      return next
+    })
+  }
 
   async function handleConnectBank() {
     setConnecting(true); setConnectError(null)
@@ -1352,22 +1480,13 @@ function StatementsTab({ statements, isLoading, properties, financials, financia
     URL.revokeObjectURL(url)
   }
 
-  const gbpFromStripe = (amount: number) => gbp(amount / 100)
-  const fmtUnix = (ts: number) => new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-
-  const payoutStatusStyle = (status: string) => {
-    if (status === 'paid') return { bg: 'rgba(74,222,128,0.12)', color: '#4ade80' }
-    if (status === 'failed') return { bg: 'rgba(248,113,113,0.12)', color: '#f87171' }
-    return { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24' }
-  }
-
-  const byYear: Record<string, Statement[]> = {}
+  const byMonth: Record<string, Statement[]> = {}
   for (const s of statements) {
-    const yr = s.period.slice(0, 4)
-    if (!byYear[yr]) byYear[yr] = []
-    byYear[yr].push(s)
+    const key = s.period.slice(0, 7) // YYYY-MM
+    if (!byMonth[key]) byMonth[key] = []
+    byMonth[key].push(s)
   }
-  const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
+  const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a))
 
   return (
     <div className="px-4 py-5 flex flex-col gap-5">
@@ -1424,33 +1543,6 @@ function StatementsTab({ statements, isLoading, properties, financials, financia
               </div>
             </div>
 
-            {/* Payout history */}
-            {financials.payouts && financials.payouts.length > 0 && (
-              <div style={CARD}>
-                <div style={{ padding: '12px 16px 8px' }}>
-                  <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Recent Payouts</p>
-                </div>
-                {financials.payouts.map((p, i) => {
-                  const st = payoutStatusStyle(p.status)
-                  return (
-                    <div key={p.id}>
-                      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                        <div>
-                          <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{gbpFromStripe(p.amount)}</p>
-                          <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Paid to bank {fmtUnix(p.arrival_date)}</p>
-                        </div>
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: st.bg, color: st.color, textTransform: 'capitalize', letterSpacing: '0.06em', flexShrink: 0 }}>{p.status.replace('_', ' ')}</span>
-                      </div>
-                      {i < (financials.payouts?.length ?? 0) - 1 && <div style={DIVIDER} />}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {financials.payouts?.length === 0 && (
-              <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No bank payments yet — they'll appear here once rent is processed.</p>
-            )}
           </div>
         )}
       </div>
@@ -1471,53 +1563,60 @@ function StatementsTab({ statements, isLoading, properties, financials, financia
           <p style={{ fontSize: 12, color: '#8899aa' }}>Statements will appear here each month once rent is processed.</p>
         </div>
       ) : (
-        years.map(yr => (
-          <div key={yr}>
-            <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>{yr}</p>
-            <div style={CARD}>
-              {byYear[yr].map((stmt, i) => {
-                const period = new Date(stmt.period).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        months.map(mo => {
+          const monthLabel = new Date(mo + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+          const isOpen = expandedMonths.has(mo)
+          return (
+            <div key={mo} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <p style={{ fontSize: 16, fontFamily: 'Georgia, serif', color: '#e8edf5', fontWeight: 400 }}>{monthLabel}</p>
+                <button type="button" onClick={() => toggleMonth(mo)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#c8d4e0', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, transition: 'background 0.15s' }}
+                  onMouseOver={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+                  onMouseOut={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}>
+                  <span>Statements</span>
+                  <span style={{ fontSize: 11, display: 'inline-block', transition: 'transform 0.2s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▾</span>
+                </button>
+              </div>
+              <div style={DIVIDER} />
+              {isOpen && byMonth[mo].map(stmt => {
                 const addr = stmt.property_id ? propMap[stmt.property_id] : null
                 return (
-                  <div key={stmt.id}>
-                    <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>{period}</p>
-                        {addr && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }} className="truncate">{addr}</p>}
-                        <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 10, color: '#8899aa' }}>Gross <span style={{ color: '#e8edf5' }}>{gbp(stmt.gross_amount)}</span></span>
-                          {stmt.management_fee > 0 && <span style={{ fontSize: 10, color: '#8899aa' }}>Fee <span style={{ color: '#f87171' }}>−{gbp(stmt.management_fee)}</span></span>}
-                          <span style={{ fontSize: 10, color: '#8899aa' }}>Net <span style={{ color: '#4ade80', fontWeight: 600 }}>{gbp(stmt.net_amount)}</span></span>
-                        </div>
-                        {stmt.notes && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4, fontStyle: 'italic' }}>{stmt.notes}</p>}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(74,222,128,0.1)', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{stmt.status}</span>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button type="button" onClick={() => handleView(stmt)}
-                            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#c8d4e0', cursor: 'pointer' }}>
-                            View
-                          </button>
-                          <button type="button" onClick={() => handleDownload(stmt)}
-                            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa', cursor: 'pointer' }}>
-                            Download
-                          </button>
-                        </div>
+                  <div key={stmt.id} style={{ ...CARD, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{addr ?? '—'}</p>
+                      <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, color: '#8899aa' }}>Gross <span style={{ color: '#e8edf5' }}>{gbp(stmt.gross_amount)}</span></span>
+                        {stmt.management_fee > 0 && <span style={{ fontSize: 10, color: '#8899aa' }}>Fee <span style={{ color: '#f87171' }}>−{gbp(stmt.management_fee)}</span></span>}
+                        <span style={{ fontSize: 10, color: '#8899aa' }}>Net <span style={{ color: '#4ade80', fontWeight: 600 }}>{gbp(stmt.net_amount)}</span></span>
                       </div>
                     </div>
-                    {i < byYear[yr].length - 1 && <div style={DIVIDER} />}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(74,222,128,0.1)', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{stmt.status}</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" onClick={() => handleView(stmt)}
+                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#c8d4e0', cursor: 'pointer' }}>
+                          View
+                        </button>
+                        <button type="button" onClick={() => handleDownload(stmt)}
+                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa', cursor: 'pointer' }}>
+                          Download
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )
               })}
             </div>
-          </div>
-        ))
+          )
+        })
       )}
 
       {viewingStatement && (
         <StatementViewModal
           stmt={viewingStatement}
           html={buildStatementHtml(viewingStatement).html}
+          address={viewingStatement.property_id ? (propMap[viewingStatement.property_id] ?? null) : null}
           onClose={() => setViewingStatement(null)}
           onDownload={() => handleDownload(viewingStatement)}
         />
@@ -1526,9 +1625,10 @@ function StatementsTab({ statements, isLoading, properties, financials, financia
   )
 }
 
-function StatementViewModal({ stmt, html, onClose, onDownload }: {
+function StatementViewModal({ stmt, html, address, onClose, onDownload }: {
   stmt: Statement
   html: string
+  address: string | null
   onClose: () => void
   onDownload: () => void
 }) {
@@ -1541,13 +1641,13 @@ function StatementViewModal({ stmt, html, onClose, onDownload }: {
     return () => URL.revokeObjectURL(blobUrl)
   }, [blobUrl])
 
-  const period = new Date(stmt.period).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const monthName = new Date(stmt.period).toLocaleDateString('en-GB', { month: 'long' })
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#0d1b2e' }}>
       <header style={{ background: '#091422', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <button type="button" onClick={onClose} style={{ fontSize: 13, color: '#8899aa', background: 'none', border: 'none', cursor: 'pointer' }}>✕ Close</button>
-        <span style={{ fontSize: 13, fontWeight: 500, color: '#e8edf5' }}>{period}</span>
+        <span style={{ fontSize: 13, fontWeight: 500, color: '#e8edf5' }}>{address ?? monthName}</span>
         <button type="button" onClick={onDownload}
           style={{ fontSize: 12, fontWeight: 500, color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer' }}>
           Download
@@ -1555,7 +1655,7 @@ function StatementViewModal({ stmt, html, onClose, onDownload }: {
       </header>
       <iframe
         src={blobUrl}
-        title={`Statement ${period}`}
+        title={`Statement ${monthName}`}
         style={{ flex: 1, border: 'none', background: '#fff' }}
       />
     </div>

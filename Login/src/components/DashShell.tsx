@@ -32,15 +32,8 @@ export default function DashShell({ tabs, active, onChange, metrics, children, u
           >
             AURELIUS
           </span>
-          {userInitials && (
-            <div className="mt-4 flex items-center gap-2.5">
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium"
-                style={{ background: 'rgba(255,255,255,0.09)', color: '#e8edf5' }}
-              >
-                {userInitials}
-              </div>
-            </div>
+          {user?.full_name && (
+            <p style={{ fontSize: 12, color: '#8899aa', marginTop: 10 }}>{user.full_name}</p>
           )}
         </div>
 
