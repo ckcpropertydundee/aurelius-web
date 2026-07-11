@@ -228,7 +228,7 @@ export default function LandlordDashboard() {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <KPICard title="Monthly Rent" value={gbp(stats.totalMonthlyRent)} subtitle={`${stats.occupiedProperties} of ${stats.totalProperties} let`} />
+                <KPICard title="Monthly Rent" value={gbp(stats.totalMonthlyRent)} subtitle={`${stats.occupiedProperties} of ${stats.totalProperties} let`} onClick={() => handleTabChange('statements')} />
                 <KPICard title="Paid" value={gbp(stats.paidThisMonth)} subtitle={percent(collectionRate) + ' this month'} accent={collectionRate >= 95 ? '#4ade80' : '#fbbf24'} />
                 <KPICard title="Occupancy" value={percent(occupancyRate, 0)} subtitle={`${stats.vacantProperties} vacant`} accent={occupancyRate === 100 ? '#4ade80' : '#e8edf5'} />
                 <KPICard title="Open Issues" value={String(stats.openMaintenance)} subtitle={stats.openMaintenance === 0 ? 'All clear' : 'Need attention'} accent={stats.openMaintenance > 0 ? '#f87171' : '#4ade80'} />
