@@ -176,6 +176,7 @@ export default function AdminDashboard() {
   const [complianceItems, setComplianceItems] = useState<ComplianceItem[]>([])
   const [complianceLoading, setComplianceLoading] = useState(false)
   const [showAddComplianceModal, setShowAddComplianceModal] = useState(false)
+  const [compliancePresetType, setCompliancePresetType] = useState<string | undefined>(undefined)
   const [editComplianceItem, setEditComplianceItem] = useState<ComplianceItem | null>(null)
   const [confirmDeleteComplianceId, setConfirmDeleteComplianceId] = useState<string | null>(null)
   const [prtDoc, setPrtDoc] = useState<{ id: string; label: string; url: string | null; uploaded_at: string } | null>(null)
@@ -632,9 +633,9 @@ export default function AdminDashboard() {
 
       const [propsRes, tenanciesForCollRes, paymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes] = await Promise.all([
         supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, profiles(full_name, email)'),
-        supabase.from('tenancies').select('id, property_id, monthly_rent').eq('is_current', true),
-        supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr),
-        supabase.from('payments').select('id, tenancy_id, amount, due_date, paid_date, status, payment_method, notes').gte('due_date', monthStart).lte('due_date', monthEnd),
+        supabase.from('tenancies').select('id, property_id, monthly_rent, start_date').eq('is_current', true),
+        supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr).neq('payment_method', 'stripe'),
+        supabase.from('payments').select('id, tenancy_id, amount, due_date, paid_date, status, payment_method, notes').gte('due_date', monthStart).lte('due_date', monthEnd).neq('payment_method', 'stripe'),
         supabase.from('rent_payments').select('id, tenancy_id, amount, paid_at').in('status', ['succeeded', 'paid']).gte('paid_at', monthStart).lte('paid_at', monthEnd + 'T23:59:59'),
         supabase.from('rent_payments').select('amount, paid_at').in('status', ['succeeded', 'paid']).not('paid_at', 'is', null).gte('paid_at', cutoffStr),
         supabase.from('maintenance_requests').select('cost, created_at').not('cost', 'is', null).gte('created_at', cutoffStr),
@@ -658,7 +659,7 @@ export default function AdminDashboard() {
       setYtdNet(ytdGrossVal - ytdMaint)
 
       // Rent collection for current month — all properties
-      const tenanciesForColl = (tenanciesForCollRes.data ?? []) as { id: string; property_id: string; monthly_rent: number | null }[]
+      const tenanciesForColl = (tenanciesForCollRes.data ?? []) as { id: string; property_id: string; monthly_rent: number | null; start_date: string | null }[]
       const thisMonthPays = (thisMonthPaysRes.data ?? []) as { id: string; tenancy_id: string; amount: number; due_date: string; paid_date: string | null; status: string | null; payment_method: string | null; notes: string | null }[]
       const stripeThisMonth = (stripeThisMonthRes.data ?? []) as { id: string; tenancy_id: string; amount: number; paid_at: string }[]
       const tenanciesByPropId: Record<string, { id: string; monthly_rent: number | null }[]> = {}
@@ -718,10 +719,6 @@ export default function AdminDashboard() {
         payByMonth[key] = (payByMonth[key] ?? 0) + Number(pay.amount ?? 0)
       }
 
-      // Expected per month = the rent roll for active properties.
-      // Using sparse payment records as the denominator caused >100% rates whenever Stripe
-      // payments arrived for properties that had no manually-created payments row.
-
       // Maintenance cost by month
       const maintByMonth: Record<string, number> = {}
       for (const m of maintRes.data ?? []) {
@@ -729,18 +726,26 @@ export default function AdminDashboard() {
         maintByMonth[key] = (maintByMonth[key] ?? 0) + Number(m.cost ?? 0)
       }
 
-      // Build 12-month snapshots — expected = actual payment records due that month
+      // Build 12-month snapshots.
+      // rentExpected for each month = sum of monthly_rent for tenancies whose start_date
+      // falls on or before that month. This ensures a property only enters the collection
+      // rate denominator from the month it became tenanted — not retroactively.
       const snaps: MonthlySnapshot[] = []
       for (let i = 11; i >= 0; i--) {
         const d = new Date()
         d.setDate(1)
         d.setMonth(d.getMonth() - i)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        const expectedForMonth = tenanciesForColl.reduce((sum, t) => {
+          const tenancyStart = (t.start_date ?? '').slice(0, 7)
+          if (!tenancyStart || tenancyStart <= key) return sum + Number(t.monthly_rent ?? 0)
+          return sum
+        }, 0)
         snaps.push({
           month: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
           date: key,
           rentCollected: payByMonth[key] ?? 0,
-          rentExpected: rentRoll,
+          rentExpected: expectedForMonth,
           maintenanceCost: maintByMonth[key] ?? 0,
         })
       }
@@ -1356,9 +1361,13 @@ export default function AdminDashboard() {
 
   const filteredSnaps = (() => { const n = analyticsPeriod === '3M' ? 3 : analyticsPeriod === '6M' ? 6 : 12; return snapshots.slice(-n) })()
   const totalCollected = filteredSnaps.reduce((s, r) => s + r.rentCollected, 0)
-  const totalExpected = filteredSnaps.reduce((s, r) => s + r.rentExpected, 0)
   const totalMaintenance = filteredSnaps.reduce((s, r) => s + r.maintenanceCost, 0)
-  const collectionRate = totalExpected > 0 ? (totalCollected / totalExpected) * 100 : 0
+  // rentExpected in each snapshot already excludes months before a tenancy started,
+  // so this ratio accurately reflects collection against rent actually due.
+  const tenantedExpectedTotal = filteredSnaps.reduce((s, r) => s + r.rentExpected, 0)
+  const tenantedCollectionRate = tenantedExpectedTotal > 0
+    ? (totalCollected / tenantedExpectedTotal) * 100
+    : null
 
   const filteredUsers = users.filter((u) => {
     const matchRole = userFilter === 'all' || u.role === userFilter
@@ -1398,7 +1407,7 @@ export default function AdminDashboard() {
     { label: 'Occupancy', value: occupancyRate != null ? `${occupancyRate.toFixed(0)}%` : '—' },
     { label: 'Rent Roll / mo', value: monthlyRentRoll > 0 ? gbp(monthlyRentRoll) : '—' },
     { label: `YTD ${new Date().getFullYear()}`, value: ytdGross > 0 ? gbp(ytdGross) : '—' },
-    { label: 'Collection', value: totalExpected > 0 ? `${collectionRate.toFixed(1)}%` : '—' },
+    { label: 'Collection (tenanted)', value: tenantedCollectionRate != null ? `${tenantedCollectionRate.toFixed(1)}%` : '—' },
   ]
 
   function exportAuditPDF() {
@@ -1602,7 +1611,27 @@ export default function AdminDashboard() {
             <div className="flex flex-col gap-3">{[...Array(4)].map((_, i) => <div key={i} style={{ ...CARD, height: 80, opacity: 0.4 }} className="animate-pulse" />)}</div>
           ) : (
             <>
-              {/* Hero */}
+              {/* KPI grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <DarkKPI title="Monthly Rent Roll" value={monthlyRentRoll > 0 ? gbp(monthlyRentRoll) : '—'} accent="#4ade80" />
+                <DarkKPI title="Occupancy" value={occupancyRate != null ? `${occupancyRate.toFixed(0)}%` : '—'} accent={occupancyRate != null && occupancyRate >= 80 ? '#4ade80' : '#fbbf24'} />
+                <DarkKPI title={`YTD Net ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdNet) : '—'} accent={ytdNet >= 0 ? '#4ade80' : '#f87171'} />
+                <DarkKPI title="Collection Rate" value={tenantedCollectionRate != null ? `${tenantedCollectionRate.toFixed(1)}%` : '—'} accent={tenantedCollectionRate != null && tenantedCollectionRate >= 90 ? '#4ade80' : '#fbbf24'} subtitle="Tenanted properties only" />
+                <DarkKPI title={`Commission (${analyticsPeriod})`} value={totalCollected > 0 ? gbp(totalCollected * 0.08) : '—'} accent="#4ade80" />
+                <DarkKPI title={`Maintenance (${analyticsPeriod})`} value={gbp(totalMaintenance)} accent="#fbbf24" />
+              </div>
+
+              {/* Period picker */}
+              <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {(['3M', '6M', '12M'] as AnalyticsPeriod[]).map((p) => (
+                  <button key={p} type="button" onClick={() => setAnalyticsPeriod(p)}
+                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 500, background: analyticsPeriod === p ? '#e8edf5' : 'transparent', color: analyticsPeriod === p ? '#0d1b2e' : '#8899aa', transition: 'all 0.15s' }}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+
+              {/* Rent Collected KPI */}
               <div style={CARD}>
                 <div style={{ padding: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
                   <div>
@@ -1616,26 +1645,6 @@ export default function AdminDashboard() {
                   </div>
                   <svg width="36" height="36" viewBox="0 0 24 24" fill="rgba(255,255,255,0.06)"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
                 </div>
-              </div>
-
-              {/* KPI grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <DarkKPI title="Monthly Rent Roll" value={monthlyRentRoll > 0 ? gbp(monthlyRentRoll) : '—'} accent="#4ade80" />
-                <DarkKPI title="Occupancy" value={occupancyRate != null ? `${occupancyRate.toFixed(0)}%` : '—'} accent={occupancyRate != null && occupancyRate >= 80 ? '#4ade80' : '#fbbf24'} />
-                <DarkKPI title={`YTD Net ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdNet) : '—'} accent={ytdNet >= 0 ? '#4ade80' : '#f87171'} />
-                <DarkKPI title="Collection Rate" value={totalExpected > 0 ? `${collectionRate.toFixed(1)}%` : '—'} accent={collectionRate >= 90 ? '#4ade80' : '#fbbf24'} />
-                <DarkKPI title={`Commission (${analyticsPeriod})`} value={totalCollected > 0 ? gbp(totalCollected * 0.08) : '—'} accent="#4ade80" />
-                <DarkKPI title={`Maintenance (${analyticsPeriod})`} value={gbp(totalMaintenance)} accent="#fbbf24" />
-              </div>
-
-              {/* Period picker */}
-              <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                {(['3M', '6M', '12M'] as AnalyticsPeriod[]).map((p) => (
-                  <button key={p} type="button" onClick={() => setAnalyticsPeriod(p)}
-                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 500, background: analyticsPeriod === p ? '#e8edf5' : 'transparent', color: analyticsPeriod === p ? '#0d1b2e' : '#8899aa', transition: 'all 0.15s' }}>
-                    {p}
-                  </button>
-                ))}
               </div>
 
               {/* Bar chart */}
@@ -2610,10 +2619,18 @@ export default function AdminDashboard() {
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Compliance Certificates</p>
-              <button type="button" onClick={() => setShowAddComplianceModal(true)}
-                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                + Add
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['vacant', 'for_let', 'viewings'].includes(selectedProperty?.status ?? '') && !complianceItems.some(c => c.type === 'Inventory') && (
+                  <button type="button" onClick={() => { setCompliancePresetType('Inventory'); setShowAddComplianceModal(true) }}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)', cursor: 'pointer' }}>
+                    + Create Inventory
+                  </button>
+                )}
+                <button type="button" onClick={() => { setCompliancePresetType(undefined); setShowAddComplianceModal(true) }}
+                  style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
+                  + Add
+                </button>
+              </div>
             </div>
             {complianceLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '16px 0' }}>Loading…</p>
@@ -3887,9 +3904,11 @@ export default function AdminDashboard() {
       {showAddComplianceModal && selectedProperty && (
         <AddComplianceModal
           property={selectedProperty}
-          onClose={() => setShowAddComplianceModal(false)}
+          presetType={compliancePresetType}
+          onClose={() => { setShowAddComplianceModal(false); setCompliancePresetType(undefined) }}
           onSaved={(newItem) => {
             setShowAddComplianceModal(false)
+            setCompliancePresetType(undefined)
             setComplianceItems(prev => [...prev, newItem])
           }}
           onFileUploaded={(id, documentUrl) => {
@@ -4057,12 +4076,13 @@ export default function AdminDashboard() {
 
 // ── Analytics sub-components ──
 
-function DarkKPI({ title, value, accent = '#e8edf5' }: { title: string; value: string; accent?: string }) {
+function DarkKPI({ title, value, accent = '#e8edf5', subtitle }: { title: string; value: string; accent?: string; subtitle?: string }) {
   return (
     <div style={CARD}>
       <div style={{ padding: '12px 14px' }}>
         <p style={{ fontSize: 20, fontWeight: 300, color: accent, lineHeight: 1, fontFamily: 'Georgia, serif' }}>{value}</p>
         <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginTop: 6 }}>{title}</p>
+        {subtitle && <p style={{ fontSize: 9, color: '#8899aa', marginTop: 3, opacity: 0.65 }}>{subtitle}</p>}
       </div>
     </div>
   )
@@ -6793,13 +6813,14 @@ function EditComplianceModal({ item, onClose, onSaved }: {
   )
 }
 
-function AddComplianceModal({ property, onClose, onSaved, onFileUploaded }: {
+function AddComplianceModal({ property, presetType, onClose, onSaved, onFileUploaded }: {
   property: AdminPropRow
+  presetType?: string
   onClose: () => void
   onSaved: (item: ComplianceItem) => void
   onFileUploaded: (id: string, documentUrl: string) => void
 }) {
-  const [certType, setCertType] = useState('')
+  const [certType, setCertType] = useState(presetType ?? '')
   const [issueDate, setIssueDate] = useState('')
   const [expiryDate, setExpiryDate] = useState('')
   const [expiryAuto, setExpiryAuto] = useState(false)
@@ -6869,10 +6890,14 @@ function AddComplianceModal({ property, onClose, onSaved, onFileUploaded }: {
         <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 16, marginTop: -8 }}>{property.address}</p>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <FormField label="Certificate Type *">
-            <select value={certType} onChange={e => handleTypeChange(e.target.value)} style={INPUT_STYLE}>
-              <option value="">Select type…</option>
-              {CERT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            {presetType ? (
+              <div style={{ ...INPUT_STYLE, color: '#e8edf5', display: 'flex', alignItems: 'center' }}>{presetType}</div>
+            ) : (
+              <select value={certType} onChange={e => handleTypeChange(e.target.value)} style={INPUT_STYLE}>
+                <option value="">Select type…</option>
+                {CERT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
           </FormField>
           {certType === 'Inventory' || certType === 'Deposit Prescribed Information' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
