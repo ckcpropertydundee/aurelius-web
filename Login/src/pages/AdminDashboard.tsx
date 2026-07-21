@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+// v2
+import React, { useState, useEffect, useRef } from 'react'
+import InventoryBuilderModal, { type InventoryDraftDetails } from '../components/InventoryBuilderModal'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { initials, gbp, fmtDate, fmtDateTime, docUrl, timeAgo } from '../lib/utils'
@@ -6,30 +8,32 @@ import DashShell from '../components/DashShell'
 import EmptyState from '../components/EmptyState'
 import SettingsPage from './SettingsPage'
 import MessageThread from '../components/MessageThread'
-import { IconChart, IconPeople, IconHouse, IconGear, IconStaff, IconWrench, IconSterling, IconActivity, IconCalendar } from '../components/icons'
+import { IconGrid, IconChart, IconPeople, IconHouse, IconGear, IconStaff, IconWrench, IconSterling, IconActivity, IconCalendar, IconTodo } from '../components/icons'
 
-function buildTabs(pendingViewings: number, todayViewings: number) {
+function buildTabs(pendingViewings: number, todayViewings: number, todoUrgent: number) {
   return [
-    { id: 'analytics',   label: 'Dashboard',   icon: <IconChart />,    badge: pendingViewings > 0 ? pendingViewings : undefined },
-    { id: 'rent',        label: 'Rent',         icon: <IconSterling /> },
-    { id: 'diary',       label: 'Diary',        icon: <IconCalendar />, badge: todayViewings > 0 ? todayViewings : undefined },
-    { id: 'users',       label: 'Users',        icon: <IconPeople /> },
-    { id: 'staff',       label: 'Staff',        icon: <IconStaff /> },
-    { id: 'properties',  label: 'Properties',   icon: <IconHouse /> },
-    { id: 'maintenance', label: 'Maintenance',  icon: <IconWrench /> },
-    { id: 'auditlog',    label: 'Audit Log',    icon: <IconActivity /> },
-    { id: 'settings',    label: 'Settings',     icon: <IconGear /> },
+    { id: 'analytics',       label: 'Dashboard',   icon: <IconGrid />,     badge: pendingViewings > 0 ? pendingViewings : undefined },
+    { id: 'analyticsDetail', label: 'Analytics',   icon: <IconChart /> },
+    { id: 'todo',            label: 'To Do',       icon: <IconTodo />,     badge: todoUrgent > 0 ? todoUrgent : undefined },
+    { id: 'rent',            label: 'Rent',        icon: <IconSterling /> },
+    { id: 'diary',           label: 'Diary',       icon: <IconCalendar />, badge: todayViewings > 0 ? todayViewings : undefined },
+    { id: 'users',           label: 'Users',       icon: <IconPeople /> },
+    { id: 'staff',           label: 'Staff',       icon: <IconStaff /> },
+    { id: 'properties',      label: 'Properties',  icon: <IconHouse /> },
+    { id: 'maintenance',     label: 'Maintenance', icon: <IconWrench /> },
+    { id: 'auditlog',        label: 'Audit Log',   icon: <IconActivity /> },
+    { id: 'settings',        label: 'Settings',    icon: <IconGear /> },
   ]
 }
 
 // ── Types (unchanged) ──
 
-interface MonthlySnapshot { month: string; date: string; rentCollected: number; rentExpected: number; maintenanceCost: number }
+interface MonthlySnapshot { month: string; date: string; rentCollected: number; rentExpected: number; maintenanceCost: number; managementFee: number }
 interface PropertyPerf { address: string; monthlyRent: number; netYield: number; trend: 'up' | 'flat' | 'down' }
 type SignalCategory = 'rent' | 'voids' | 'maintenance' | 'compliance'
 interface ImprovementSignal { id: string; category: SignalCategory; title: string; detail: string; potentialUplift?: number }
 type AnalyticsPeriod = '3M' | '6M' | '12M'
-interface UserRow { id: string; email: string; full_name: string | null; role: string; status: string | null }
+interface UserRow { id: string; email: string; full_name: string | null; role: string; status: string | null; management_fee_percent: number | null }
 type UserRoleFilter = 'all' | 'admin' | 'landlord' | 'tenant' | 'contractor'
 interface StaffMember { id: string; full_name: string; email: string; role: 'admin' | 'master admin'; status: string | null }
 type StaffRoleFilter = 'all' | 'admin' | 'master admin'
@@ -38,10 +42,10 @@ type MaintenanceFilter = 'all' | 'open' | 'in_progress' | 'resolved' | 'complian
 interface ViewingRequest { id: string; property_id: string | null; name: string; email: string; phone: string | null; preferred_date: string; preferred_time: string; message: string | null; status: string; created_at: string; properties: { address: string } | null }
 interface TenancyNotice { id: string; tenancy_id: string; tenant_id: string; property_id: string; notice_date: string; vacate_date: string; status: string; created_at: string; properties: { address: string } | null; profiles: { full_name: string | null; email: string } | null }
 interface ComplianceAlert { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; document_url: string | null; notes: string | null; properties: { address: string } | null }
-type PropStatus = 'active' | 'tenanted' | 'notice' | 'viewings' | 'for_let' | 'vacant'
-interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; profiles: { full_name: string | null; email: string } | null; purchase_price?: number | null }
-interface ComplianceItem { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; status: string | null; document_url: string | null; notes: string | null }
-interface PropertyTenancyInfo { id: string; tenant_id: string; tenant_name: string | null; tenant_email: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null }
+type PropStatus = 'active' | 'tenanted' | 'notice' | 'moving_in' | 'viewings' | 'for_let' | 'vacant'
+interface AdminPropRow { id: string; address: string; postcode: string | null; property_type: string | null; bedrooms: number | null; monthly_rent: number | null; is_active: boolean; status: PropStatus | null; created_at: string; landlord_id: string; description: string | null; photo_urls: string[] | null; has_gas: boolean; is_listed: boolean; available_from: string | null; listing_headline: string | null; landlord_registration_number: string | null; epc_rating: string | null; pre_tenancy_check_completed: boolean; pre_tenancy_check_date: string | null; deposit_scheme: string | null; deposit_registered_date: string | null; deposit_amount: number | null; meter_certificate_url: string | null; move_in_date: string | null; move_out_date: string | null; profiles: { full_name: string | null; email: string } | null; purchase_price?: number | null; key_number: number | null }
+interface ComplianceItem { id: string; property_id: string; type: string; issue_date: string | null; expiry_date: string | null; status: string | null; document_url: string | null; notes: string | null; uploaded_at?: string | null; pdf_url?: string | null; cleanliness_comment?: string | null; odour_comment?: string | null; heat_detector_present?: boolean; smoke_detector_present?: boolean; co_detector_present?: boolean }
+interface PropertyTenancyInfo { id: string; tenant_id: string; tenant_name: string | null; tenant_email: string; tenant_phone: string | null; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null }
 interface AuditEvent { id: string; ts: string; cat: 'maintenance' | 'payment' | 'tenancy' | 'compliance' | 'viewing'; title: string; detail?: string; ok?: boolean; documentUrl?: string }
 interface PropertyKey { id: string; property_id: string; key_type: 'master' | 'tenant' | 'contractor'; holder_name: string | null; holder_role: string | null; checked_out_at: string | null; notes: string | null }
 interface KeyEvent { id: string; property_id: string; key_type: string; action: 'checked_out' | 'returned'; person_name: string | null; notes: string | null; created_at: string }
@@ -57,6 +61,77 @@ interface PropertyJob { id: string; property_id: string; title: string; descript
 // ── Theme ──
 
 const CARD: React.CSSProperties = { background: '#112240', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12 }
+
+const TODO_CHECKLISTS: Record<string, string[]> = {
+  'Move In': [
+    'Tenancy agreement signed by all parties',
+    'Deposit collected and registered with scheme',
+    'Keys issued to tenant',
+    'Move-in inventory completed and signed',
+    'Standing order / payment method set up',
+    'Utility meter readings taken',
+    'Welcome pack sent to tenant',
+  ],
+  'Move Out': [
+    'Check-out inspection date agreed with tenant',
+    'Keys returned from tenant',
+    'Final utility meter readings taken',
+    'Property condition assessed against inventory',
+    'Deposit return amount agreed',
+    'Deposit returned within legal timeframe',
+    'Any deductions documented and evidenced',
+    'Property cleaned and ready for re-let',
+    'Re-advertise / find next tenant',
+  ],
+  'Notice': [
+    'Notice acknowledged in writing to tenant',
+    'Vacate date confirmed',
+    'Check-out inspection date agreed',
+    'Deposit return procedure explained to tenant',
+    'Landlord notified of notice',
+    'Property relisting and marketing planned',
+  ],
+  'Viewing': [
+    'Viewing time confirmed with applicant',
+    'Property access arranged',
+    'Application form sent to applicant',
+    'References and right-to-rent checks requested',
+    'Outcome communicated to applicant',
+  ],
+  'Emergency': [
+    'Emergency contractor contacted immediately',
+    'Tenant confirmed safe and informed',
+    'Site visit confirmed and attended',
+    'Emergency works completed',
+    'Follow-up inspection carried out',
+    'Invoice received and filed',
+    'Incident documented for records',
+  ],
+  'Urgent Maintenance': [
+    'Contractor contacted',
+    'Site visit scheduled',
+    'Tenant informed of visit date and time',
+    'Quote received and approved',
+    'Works completed and signed off',
+    'Invoice received and filed',
+  ],
+  'Maintenance': [
+    'Contractor contacted',
+    'Site visit scheduled',
+    'Tenant informed of visit date and time',
+    'Quote received and approved',
+    'Works completed and signed off',
+    'Invoice received and filed',
+  ],
+  'Certificate': [
+    'Renewal provider / engineer contacted',
+    'Inspection or assessment booked',
+    'Inspection attended and completed',
+    'New certificate received from provider',
+    'Certificate uploaded to property documents',
+    'Expiry date updated in records',
+  ],
+}
 
 const JOB_PHASE: Record<JobType, number> = {
   notice_received: 1,
@@ -107,21 +182,24 @@ function badge(s: string | null, variant: 'status' | 'priority' | 'role' = 'stat
   return { background: 'rgba(136,153,170,0.12)', color: '#8899aa' }
 }
 
-import type React from 'react'
 
 export default function AdminDashboard() {
   const { user } = useAuth()
   const [tab, setTab] = useState('analytics')
   const userInitials = initials(user?.full_name, user?.email ?? '')
+  const [adminToast, setAdminToast] = useState<string | null>(null)
 
   const [snapshots, setSnapshots] = useState<MonthlySnapshot[]>([])
   const [properties, setProperties] = useState<PropertyPerf[]>([])
   const [propertyCount, setPropertyCount] = useState<number | null>(null)
   const [tenantedCount, setTenantedCount] = useState<number | null>(null)
   const [monthlyRentRoll, setMonthlyRentRoll] = useState<number>(0)
+  const [monthlyMgmtFee, setMonthlyMgmtFee] = useState<number>(0)
+  const [monthlyRepairDeductions, setMonthlyRepairDeductions] = useState<number>(0)
   const [ytdGross, setYtdGross] = useState<number>(0)
   const [ytdNet, setYtdNet] = useState<number>(0)
-  const [rentCollection, setRentCollection] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; collected: number; isPaid: boolean; isVacant: boolean; paymentId: string | null; dueDate: string | null; paymentMethod: string | null; paymentNotes: string | null; landlordEmail: string; landlordName: string }[]>([])
+
+  const [rentCollection, setRentCollection] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; collected: number; isPaid: boolean; isVacant: boolean; isProRated?: boolean; moveOutDate?: string; moveInDate?: string; paymentId: string | null; dueDate: string | null; paymentMethod: string | null; paymentNotes: string | null; landlordEmail: string; landlordName: string; paidAt: string | null }[]>([])
   const [markPaidItem, setMarkPaidItem] = useState<{ tenancyId: string; address: string; expected: number; paymentId: string | null; dueDate: string | null; landlordEmail: string; landlordName: string } | null>(null)
   const [signals, setSignals] = useState<ImprovementSignal[]>([])
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('6M')
@@ -160,6 +238,13 @@ export default function AdminDashboard() {
   const [complianceAlertsLoading, setComplianceAlertsLoading] = useState(false)
   const [complianceAlertsLoaded, setComplianceAlertsLoaded] = useState(false)
   const [selectedComplianceAlert, setSelectedComplianceAlert] = useState<ComplianceAlert | null>(null)
+
+  // To Do tab
+  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null)
+  const [todoChecks, setTodoChecks] = useState<Record<string, boolean[]>>(() => {
+    try { return JSON.parse(localStorage.getItem('aurelius-todo-checks') ?? '{}') }
+    catch { return {} }
+  })
   const [usersLoaded, setUsersLoaded] = useState(false)
 
   const [quickError, setQuickError] = useState<string | null>(null)
@@ -173,9 +258,13 @@ export default function AdminDashboard() {
   const [propStatusFilter, setPropStatusFilter] = useState<PropStatus | 'all' | 'listed'>('all')
 
   const [selectedProperty, setSelectedProperty] = useState<AdminPropRow | null>(null)
+  const selectedPropertyRef = useRef<AdminPropRow | null>(null)
+  useEffect(() => { selectedPropertyRef.current = selectedProperty }, [selectedProperty])
   const [complianceItems, setComplianceItems] = useState<ComplianceItem[]>([])
   const [complianceLoading, setComplianceLoading] = useState(false)
   const [showAddComplianceModal, setShowAddComplianceModal] = useState(false)
+  const [showInventoryBuilder, setShowInventoryBuilder] = useState(false)
+  const [inventoryBuilderItem, setInventoryBuilderItem] = useState<InventoryDraftDetails | null>(null)
   const [compliancePresetType, setCompliancePresetType] = useState<string | undefined>(undefined)
   const [editComplianceItem, setEditComplianceItem] = useState<ComplianceItem | null>(null)
   const [confirmDeleteComplianceId, setConfirmDeleteComplianceId] = useState<string | null>(null)
@@ -183,9 +272,28 @@ export default function AdminDashboard() {
   const [prtLoading, setPrtLoading] = useState(false)
   const [prtUploading, setPrtUploading] = useState(false)
   const [showAddPRTModal, setShowAddPRTModal] = useState(false)
+  const [showPRTGenerator, setShowPRTGenerator] = useState(false)
+  const [_sentPrtId, setSentPrtId] = useState<string | null>(null)
+  const [sentPrtStatus, setSentPrtStatus] = useState<'pending' | 'tenant_signed' | 'executed' | null>(null)
+  const [sentPrtHtml, setSentPrtHtml] = useState<string | null>(null)
+  const [showAdminSignPRT, setShowAdminSignPRT] = useState(false)
+  const adminSigCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const adminSigDrawing = useRef(false)
+  const adminSigHasStroke = useRef(false)
+  const [adminSigTypedName, setAdminSigTypedName] = useState('')
+  const [adminSigSubmitting, setAdminSigSubmitting] = useState(false)
+  const [adminSigError, setAdminSigError] = useState<string | null>(null)
+  const [landlordNotifiedAt, setLandlordNotifiedAt] = useState<string | null>(null)
+  const [landlordSharing, setLandlordSharing] = useState(false)
+  const [prtSending, setPrtSending] = useState(false)
+  const [prtForm, setPrtForm] = useState<{
+    tenantName: string; tenantAddress: string; tenantEmail: string; tenantPhone: string
+    startDate: string; monthlyRent: string; firstPayment: string; depositAmount: string
+    landlordName: string; landlordReg: string
+  }>({ tenantName: '', tenantAddress: '', tenantEmail: '', tenantPhone: '', startDate: '', monthlyRent: '', firstPayment: '', depositAmount: '', landlordName: '', landlordReg: '' })
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
   const [auditLoading, setAuditLoading] = useState(false)
-  const [propertyTenancy, setPropertyTenancy] = useState<PropertyTenancyInfo | null>(null)
+  const [_propertyTenancy, setPropertyTenancy] = useState<PropertyTenancyInfo | null>(null)
   const [propertyTenancies, setPropertyTenancies] = useState<PropertyTenancyInfo[]>([])
   const [propertyTenancyLoading, setPropertyTenancyLoading] = useState(false)
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false)
@@ -195,6 +303,15 @@ export default function AdminDashboard() {
 
   const [showAddStaffModal, setShowAddStaffModal] = useState(false)
   const [nonStaffUsers, setNonStaffUsers] = useState<{ id: string; email: string; full_name: string | null; role: string }[]>([])
+
+  // Staff invite modal
+  const [showStaffInviteModal, setShowStaffInviteModal] = useState(false)
+  const [staffInviteEmail, setStaffInviteEmail] = useState('')
+  const [staffInviteRole, setStaffInviteRole] = useState<'admin' | 'master admin'>('admin')
+  const [staffInviteName, setStaffInviteName] = useState('')
+  const [staffInviteSaving, setStaffInviteSaving] = useState(false)
+  const [staffInviteError, setStaffInviteError] = useState<string | null>(null)
+  const [staffInviteSuccess, setStaffInviteSuccess] = useState(false)
   const [editProperty, setEditProperty] = useState<AdminPropRow | null>(null)
   const [showTenantInfoPack, setShowTenantInfoPack] = useState(false)
   const [listingHeadline, setListingHeadline] = useState('')
@@ -212,7 +329,6 @@ export default function AdminDashboard() {
 
 
   const [preCheckSaving, setPreCheckSaving] = useState(false)
-  const [smokeSaving, setSmokeSaving] = useState(false)
   const [gasToggleSaving, setGasToggleSaving] = useState(false)
   const [diaryWeekOffset, setDiaryWeekOffset] = useState(0)
   const [selectedDiaryDay, setSelectedDiaryDay] = useState<string | null>(null)
@@ -240,6 +356,18 @@ export default function AdminDashboard() {
   const [checkOutNotes, setCheckOutNotes] = useState('')
   const [checkOutSaving, _setCheckOutSaving] = useState(false)
   const [returnConfirmKey, setReturnConfirmKey] = useState<string | null>(null)
+  const [editingKeyNumber, setEditingKeyNumber] = useState(false)
+  const [keyNumberDraft, setKeyNumberDraft] = useState('')
+  const [keyNumberSaving, setKeyNumberSaving] = useState(false)
+  const [showAddDeductionModal, setShowAddDeductionModal] = useState(false)
+  const [deductionType, setDeductionType] = useState<'Inventory' | 'Legionella' | 'General Maintenance' | 'Custom'>('Inventory')
+  const [deductionCustomTitle, setDeductionCustomTitle] = useState('')
+  const [deductionAmount, setDeductionAmount] = useState('')
+  const [deductionNotes, setDeductionNotes] = useState('')
+  const [deductionSaving, setDeductionSaving] = useState(false)
+  const [deductionError, setDeductionError] = useState<string | null>(null)
+  const [propertyDeductions, setPropertyDeductions] = useState<{ id: string; invoice_number: string; description: string | null; total: number; created_at: string; jobTitle: string | null }[]>([])
+  const [propertyDeductionsLoading, setPropertyDeductionsLoading] = useState(false)
 
   const [meterReadings, setMeterReadings] = useState<MeterReading[]>([])
   const [meterReadingsLoading, setMeterReadingsLoading] = useState(false)
@@ -284,18 +412,55 @@ export default function AdminDashboard() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tenancy_notices' }, () => {
         loadTenancyNotices()
       })
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user?.id}` },
+        (payload) => {
+          const n = payload.new as { type: string; title: string; body: string }
+          setAdminToast(`${n.title}${n.body ? `: ${n.body}` : ''}`)
+          setTimeout(() => setAdminToast(null), 6000)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rent_payments' },
+        (payload) => {
+          const p = payload.new as { status: string; amount: number }
+          if (p.status === 'succeeded') {
+            setAdminToast(`Rent payment received: ${gbp(p.amount)}`)
+            setTimeout(() => setAdminToast(null), 8000)
+            setAnalyticsLoaded(false)
+            loadAnalytics()
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'prt_agreements' },
+        (payload) => {
+          const row = payload.new as { property_id: string; status: string }
+          if (row.property_id === selectedPropertyRef.current?.id) {
+            if (row.status === 'tenant_signed') setSentPrtStatus('tenant_signed')
+            if (row.status === 'executed') setSentPrtStatus('executed')
+          }
+        }
+      )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
-    if ((tab === 'analytics' || tab === 'rent') && !analyticsLoaded) loadAnalytics()
+    if (tab === 'rent') { setAnalyticsLoaded(false); loadAnalytics() }
+    else if ((tab === 'analytics' || tab === 'analyticsDetail') && !analyticsLoaded) loadAnalytics()
     if (tab === 'users' && !usersLoaded) loadUsers()
     if (tab === 'staff' && !staffLoaded) loadStaff()
     if (tab === 'properties' && !adminPropsLoaded) loadAdminProps()
     if (tab === 'maintenance' && !maintenanceLoaded) loadMaintenance()
     if (tab === 'maintenance' && !complianceAlertsLoaded) loadComplianceAlerts()
+    if (tab === 'todo' && !adminPropsLoaded) loadAdminProps()
+    if (tab === 'todo' && !maintenanceLoaded) loadMaintenance()
+    if (tab === 'todo' && !complianceAlertsLoaded) loadComplianceAlerts()
     if (tab === 'auditlog' && !auditLogsLoaded) loadAuditLogs(0, true)
   }, [tab])
 
@@ -330,7 +495,7 @@ export default function AdminDashboard() {
     setComplianceLoading(true)
     supabase
       .from('compliance_items')
-      .select('id, property_id, type, issue_date, expiry_date, status, document_url, notes')
+      .select('id, property_id, type, issue_date, expiry_date, status, document_url, notes, uploaded_at, pdf_url, cleanliness_comment, odour_comment, heat_detector_present, smoke_detector_present, co_detector_present')
       .eq('property_id', selectedProperty.id)
       .order('expiry_date', { ascending: true })
       .then(({ data }) => {
@@ -340,17 +505,52 @@ export default function AdminDashboard() {
   }, [selectedProperty?.id])
 
   useEffect(() => {
-    if (!selectedProperty) { setPrtDoc(null); return }
+    if (!selectedProperty) {
+      setPrtDoc(null)
+      setSentPrtId(null)
+      setSentPrtStatus(null)
+      setSentPrtHtml(null)
+      setLandlordNotifiedAt(null)
+      return
+    }
     setPrtLoading(true)
-    supabase.from('documents')
-      .select('id, label, url, uploaded_at')
-      .eq('property_id', selectedProperty.id)
-      .eq('type', 'tenancy_agreement')
-      .order('uploaded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => { setPrtDoc(data ?? null); setPrtLoading(false) })
+    Promise.all([
+      supabase.from('documents')
+        .select('id, label, url, uploaded_at')
+        .eq('property_id', selectedProperty.id)
+        .eq('type', 'tenancy_agreement')
+        .order('uploaded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.rpc('get_property_prt', { p_property_id: selectedProperty.id }),
+    ]).then(([{ data: doc }, { data: prtRows }]) => {
+      setPrtDoc(doc ?? null)
+      const prt = Array.isArray(prtRows) && prtRows.length > 0 ? prtRows[0] : null
+      if (prt) {
+        setSentPrtId(prt.id)
+        setSentPrtStatus(prt.status as 'pending' | 'tenant_signed' | 'executed')
+        setLandlordNotifiedAt(prt.landlord_notified_at ?? null)
+      } else {
+        setSentPrtId(null)
+        setSentPrtStatus(null)
+        setSentPrtHtml(null)
+        setLandlordNotifiedAt(null)
+      }
+      setPrtLoading(false)
+    })
   }, [selectedProperty?.id])
+
+  // Poll PRT status while pending so admin sees tenant signature without a refresh
+  useEffect(() => {
+    if (!selectedProperty || sentPrtStatus !== 'pending') return
+    const interval = setInterval(async () => {
+      const { data } = await supabase.rpc('get_property_prt', { p_property_id: selectedProperty.id })
+      const prt = Array.isArray(data) && data.length > 0 ? data[0] : null
+      if (prt?.status === 'tenant_signed') setSentPrtStatus('tenant_signed')
+      if (prt?.status === 'executed') setSentPrtStatus('executed')
+    }, 8000)
+    return () => clearInterval(interval)
+  }, [selectedProperty?.id, sentPrtStatus])
 
   useEffect(() => {
     if (!selectedProperty) { setPropertyTenancy(null); return }
@@ -361,6 +561,11 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!selectedProperty) { setPropertyKeys([]); setKeyEvents([]); return }
     loadPropertyKeys(selectedProperty.id)
+  }, [selectedProperty?.id])
+
+  useEffect(() => {
+    if (!selectedProperty) { setPropertyDeductions([]); return }
+    loadPropertyDeductions(selectedProperty.id)
   }, [selectedProperty?.id])
 
   useEffect(() => {
@@ -377,14 +582,14 @@ export default function AdminDashboard() {
     setPropertyTenancyLoading(true)
     const { data } = await supabase
       .from('tenancies')
-      .select('id, tenant_id, start_date, end_date, monthly_rent, deposit_scheme, deposit_registered_date, last_rent_increase_date, profiles(full_name, email)')
+      .select('id, tenant_id, start_date, end_date, monthly_rent, deposit_scheme, deposit_registered_date, last_rent_increase_date, profiles(full_name, email, phone)')
       .eq('property_id', propertyId)
       .eq('is_current', true)
       .order('start_date')
-    const rows = (data ?? []) as unknown as Array<{ id: string; tenant_id: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null; profiles: { full_name: string | null; email: string } | { full_name: string | null; email: string }[] | null }>
+    const rows = (data ?? []) as unknown as Array<{ id: string; tenant_id: string; start_date: string; end_date: string | null; monthly_rent: number | null; deposit_scheme: string | null; deposit_registered_date: string | null; last_rent_increase_date: string | null; profiles: { full_name: string | null; email: string; phone: string | null } | { full_name: string | null; email: string; phone: string | null }[] | null }>
     const mapped = rows.map(raw => {
       const prof = Array.isArray(raw.profiles) ? raw.profiles[0] ?? null : raw.profiles
-      return { id: raw.id, tenant_id: raw.tenant_id, tenant_name: prof?.full_name ?? null, tenant_email: prof?.email ?? '', start_date: raw.start_date, end_date: raw.end_date, monthly_rent: raw.monthly_rent, deposit_scheme: raw.deposit_scheme, deposit_registered_date: raw.deposit_registered_date, last_rent_increase_date: raw.last_rent_increase_date }
+      return { id: raw.id, tenant_id: raw.tenant_id, tenant_name: prof?.full_name ?? null, tenant_email: prof?.email ?? '', tenant_phone: prof?.phone ?? null, start_date: raw.start_date, end_date: raw.end_date, monthly_rent: raw.monthly_rent, deposit_scheme: raw.deposit_scheme, deposit_registered_date: raw.deposit_registered_date, last_rent_increase_date: raw.last_rent_increase_date }
     })
     setPropertyTenancies(mapped)
     setPropertyTenancy(mapped[0] ?? null)
@@ -420,6 +625,603 @@ export default function AdminDashboard() {
     await supabase.from('documents').update({ url: storagePath }).eq('id', prtDoc.id)
     setPrtDoc(prev => prev ? { ...prev, url: storagePath } : prev)
     setPrtUploading(false)
+  }
+
+  function openPRTGenerator() {
+    if (!selectedProperty || propertyTenancies.length === 0) return
+    const t = propertyTenancies[0]
+    const rent = t.monthly_rent ?? selectedProperty.monthly_rent ?? 0
+    let firstPayment = rent
+    let firstPaymentPeriod = ''
+    if (t.start_date) {
+      const d = new Date(t.start_date)
+      const day = d.getDate()
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+      if (day > 1) {
+        firstPayment = Math.round(((daysInMonth - day + 1) / daysInMonth) * rent * 100) / 100
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+        firstPaymentPeriod = `${fmtDate(t.start_date)} to ${fmtDate(lastDay.toISOString().slice(0, 10))}`
+      } else {
+        firstPaymentPeriod = fmtDate(t.start_date)
+      }
+    }
+    setPrtForm({
+      tenantName: t.tenant_name ?? '',
+      tenantAddress: '',
+      tenantEmail: t.tenant_email ?? '',
+      tenantPhone: t.tenant_phone ?? '',
+      startDate: t.start_date ?? '',
+      monthlyRent: String(rent),
+      firstPayment: String(firstPayment),
+      depositAmount: String(selectedProperty.deposit_amount ?? ''),
+      landlordName: selectedProperty.profiles?.full_name ?? '',
+      landlordReg: selectedProperty.landlord_registration_number ?? '',
+    })
+    void firstPaymentPeriod
+    setShowPRTGenerator(true)
+  }
+
+  function _buildPRTHtml(): string | null {
+    const f = prtForm
+    if (!selectedProperty) return null
+    const rent = parseFloat(f.monthlyRent) || 0
+    const firstPay = parseFloat(f.firstPayment) || 0
+    const deposit = parseFloat(f.depositAmount) || 0
+
+    const startDate = f.startDate ? new Date(f.startDate) : null
+    const startDay = startDate ? startDate.getDate() : 1
+    const lastDayOfMonth = startDate ? new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0) : null
+    const nextPaymentDate = startDate ? new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1) : null
+
+    const fmt = (d: Date | null) => d ? d.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '___________'
+    const fmtShort = (s: string) => s ? new Date(s).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '___________'
+
+    const isFirstOfMonth = startDay === 1
+    const firstPaymentText = isFirstOfMonth
+      ? `The first payment will be paid in cleared funds on or before ${fmtShort(f.startDate)} and will be for the sum of £${rent.toFixed(2)} in respect of the first month's rent (the maximum amount of rent which can be paid in advance is 6 months' rent).`
+      : `The first payment will be paid in cleared funds on or before ${fmtShort(f.startDate)} and will be for the sum of £${firstPay.toFixed(2)} in respect of the period ${fmtShort(f.startDate)} to ${fmt(lastDayOfMonth)} (the maximum amount of rent which can be paid in advance is 6 months' rent).`
+
+    const nextPayText = nextPaymentDate ? `Thereafter payments of £${rent.toFixed(2)} must be received on or before ${fmt(nextPaymentDate)} and then subsequently on or before the same date each calendar month thereafter until termination of this tenancy agreement.` : ''
+
+    const addressParts = selectedProperty.address.split(',').map((s: string) => s.trim()).filter(Boolean)
+    const propertyAddress = [...addressParts, selectedProperty.postcode].filter(Boolean).join('\n')
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Private Residential Tenancy Agreement — ${selectedProperty.address}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; background: #fff; padding: 0; }
+  .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 20mm 20mm 20mm 20mm; page-break-after: always; }
+  .page:last-child { page-break-after: avoid; }
+  h1 { font-size: 15pt; text-align: center; margin-bottom: 16pt; }
+  h2 { font-size: 12pt; margin: 14pt 0 6pt; font-weight: bold; text-decoration: underline; }
+  h3 { font-size: 11pt; margin: 10pt 0 4pt; font-weight: bold; }
+  p { margin-bottom: 8pt; line-height: 1.5; }
+  ul { margin: 6pt 0 8pt 20pt; }
+  li { margin-bottom: 4pt; line-height: 1.5; }
+  .logo-block { text-align: center; padding-bottom: 16pt; margin-bottom: 16pt; border-bottom: 1px solid #0D1B3E; }
+  .logo-wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 26pt; font-weight: normal; letter-spacing: 10px; color: #0D1B3E; text-transform: uppercase; }
+  .logo-rule { width: 100px; height: 1px; background: #0D1B3E; margin: 6pt auto; opacity: 0.3; }
+  .logo-sub { font-size: 7pt; letter-spacing: 4px; color: #4A5878; text-transform: uppercase; font-weight: normal; }
+  .doc-title { font-size: 11pt; text-align: center; color: #4A5878; margin-top: 10pt; letter-spacing: 1px; text-transform: uppercase; }
+  .clause { margin-bottom: 12pt; }
+  .clause-num { font-weight: bold; margin-right: 4pt; }
+  .filled { font-weight: bold; }
+  .section-title { font-size: 12pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; margin: 18pt 0 10pt; border-top: 2px solid #0D1B3E; padding-top: 10pt; color: #0D1B3E; }
+  .page-num { text-align: center; font-size: 9pt; color: #666; margin-top: 20pt; }
+  .toolbar { position: fixed; top: 0; left: 0; right: 0; background: #0D1B3E; display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; z-index: 9999; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+  .toolbar-title { font-family: Georgia, serif; font-size: 13px; color: rgba(255,255,255,0.7); letter-spacing: 2px; text-transform: uppercase; }
+  .toolbar-btns { display: flex; gap: 8px; }
+  .btn-print { padding: 8px 18px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .btn-save { padding: 8px 18px; background: #4ade80; color: #0D1B3E; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-print:hover { background: rgba(255,255,255,0.18); }
+  .btn-save:hover { background: #22c55e; }
+  @media print {
+    body { padding: 0; }
+    .page { margin: 0; page-break-after: always; }
+    .toolbar { display: none; }
+  }
+  body { padding-top: 52px; }
+  @media print { body { padding-top: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar no-print">
+  <span class="toolbar-title">Aurelius · PRT Agreement</span>
+  <div class="toolbar-btns">
+    <button class="btn-print" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="page">
+<div class="logo-block">
+  <div class="logo-wordmark">Aurelius</div>
+  <div class="logo-rule"></div>
+  <div class="logo-sub">Property Management</div>
+</div>
+<div class="doc-title">Scottish Private Residential Tenancy Agreement</div>
+<br>
+
+<h1>Scottish Private Residential Tenancy Agreement</h1>
+
+<div class="section-title">Section 1: How to Use This Agreement</div>
+<p>A Landlord is under a duty to provide the written terms of a private residential tenancy under section 10 of the Private Housing (Tenancies) (Scotland) Act 2016 ("the Act").</p>
+<p>The Private Residential Tenancies (Information for Tenants) (Scotland) Regulations 2017 provide that if a Landlord chooses not to use the Model Private Residential Tenancy Agreement, the Landlord is still legally required to give a Tenant a copy of the Private Residential Tenancy Statutory Terms Supporting Notes.</p>
+
+<div class="section-title">Section 2: Glossary of Terms and Interpretation</div>
+<p>In this Agreement, the following words have these meanings except where the content indicates otherwise:</p>
+<ul>
+<li><strong>The Act:</strong> The Private Housing (Tenancies) (Scotland) Act 2016</li>
+<li><strong>Assignation:</strong> where a Tenant transfers his or her rights to a private residential tenancy (or share in a joint tenancy) to another person, subject to obtaining the Landlord's prior written permission.</li>
+<li><strong>Common Parts:</strong> in relation to the Let Property, the structure and exterior of, and any common facilities within or used in connection with, the building or part of a building which includes the Let Property but only in so far as the structure, exterior and common facilities are not solely owned by the owner of the Let Property.</li>
+<li><strong>Eviction ground:</strong> one or more of the grounds named in schedule 3 of the Act on the basis of which an eviction order may be issued by the First-tier Tribunal for Scotland Housing and Property Chamber ("the Tribunal").</li>
+<li><strong>Fixed carbon-fuelled appliance:</strong> an appliance that is attached to the building fabric or connected to a mains fuel supply and burns fuel to produce energy.</li>
+<li><strong>Guarantor:</strong> a third party, such as a parent or close relative, who agrees to pay rent if the Tenant does not pay it and meet any other obligation that the Tenant fails to meet.</li>
+<li><strong>House in Multiple Occupation (HMO):</strong> living accommodation occupied by three or more adults (aged 16 or over) from three or more families as their only or main residence with shared basic amenities.</li>
+<li><strong>Jointly and severally liable:</strong> where there are two or more Joint Tenants, each Joint Tenant is fully liable to the Landlord(s) for the obligations of the Tenant under this Agreement including the obligation to pay rent.</li>
+<li><strong>Landlord:</strong> includes any Joint Landlord.</li>
+<li><strong>Let Property:</strong> the property rented by the Tenant from the Landlord.</li>
+<li><strong>Letting Agent:</strong> works for the Landlord of a Let Property and offers a range of services from finding suitable Tenants, collecting rent, arranging repairs etc.</li>
+<li><strong>Neighbour:</strong> any person living in the neighbourhood.</li>
+<li><strong>Neighbourhood:</strong> the local area of the Let Property.</li>
+<li><strong>Private Residential Tenancy:</strong> a tenancy where the property is let to an individual as a separate dwelling; the Tenant occupies all or part of it as the Tenant's only or principal home; and the tenancy is not one which is excluded under schedule 1 of the Act.</li>
+<li><strong>Registered Landlord:</strong> a person who is entered in the register prepared and maintained by the local authority for the purposes of Part 8 of the Antisocial Behaviour etc. (Scotland) Act 2004.</li>
+<li><strong>Rent:</strong> any sum payable periodically by the Tenant to the Landlord in connection with the tenancy.</li>
+<li><strong>Rent-increase notice:</strong> the notice that a Landlord under a private residential tenancy must use when notifying a Tenant of a proposed rent increase.</li>
+<li><strong>Rent officer:</strong> an independent officer appointed by law who can decide how much rent is payable under a private residential tenancy.</li>
+<li><strong>Rent Pressure Zone (RPZ):</strong> a defined area in which Scottish Ministers have put a cap on how much rents for existing Tenants can be increased by each year.</li>
+<li><strong>Statutory terms:</strong> the terms which apply to every private residential tenancy.</li>
+<li><strong>Tenant:</strong> includes any joint Tenant or joint sub-Tenant.</li>
+<li><strong>The Tribunal:</strong> the First-tier Tribunal for Scotland Housing and Property Chamber.</li>
+</ul>
+<p>Declaring for the purposes of this Agreement that words importing the masculine gender shall include the feminine gender and vice versa; words in the singular include the plural and vice versa, and where there are two or more persons included in the expression "the Tenant" the obligations and conditions to be met by "the Tenant", including payment of the rent, apply to all such persons jointly and severally.</p>
+</div>
+
+<div class="page">
+<div class="section-title">Section 3: Scottish Private Residential Tenancy Agreement</div>
+
+<div class="clause">
+<h3>1. TENANT</h3>
+<p>Name(s) and Address(es):</p>
+<p><strong>Tenant (1) ${f.tenantName}${f.tenantAddress ? ', ' + f.tenantAddress.replace(/\n/g, ', ') : ''}</strong> ("the Tenant(s)")</p>
+<p>Where this is a joint tenancy, the term "Tenant" applies to each of the individuals above and the full responsibilities and rights set out in this Agreement apply to each Tenant who will be jointly and severally liable for all of the obligations of the Tenant under this Agreement.</p>
+<p>Email address(es):<br><strong>Tenant (1) email address: ${f.tenantEmail}</strong></p>
+<p>Telephone number(s):<br><strong>Tenant (1) telephone number: ${f.tenantPhone}</strong></p>
+</div>
+
+<div class="clause">
+<h3>2. LETTING AGENT</h3>
+<p><strong>Name: Aurelius Property Management</strong><br>
+or such other Agent as the Landlord may from time to time appoint. For the avoidance of doubt, the Landlord may decide to undertake the management of the Let Property personally.</p>
+<p>Email address: <strong>aureliuspropertymanagement@gmail.com</strong></p>
+</div>
+
+<div class="clause">
+<h3>3. LANDLORD</h3>
+<p><strong>Landlord (1): ${f.landlordName}</strong><br>
+Care of Aurelius Property Management</p>
+${f.landlordReg ? `<p>Landlord (1) registration number: <strong>${f.landlordReg}</strong></p>` : ''}
+</div>
+
+<div class="clause">
+<h3>4. COMMUNICATION</h3>
+<p>The Landlord and Tenant agree that all communications which may or must be made under the Act and in relation to this Agreement, including notices to be served by one party on the other will be made in writing using hard copy by personal delivery or recorded delivery or the email addresses set out in clauses 1 and 2 above.</p>
+<p>For communication by email it is essential that the Landlord(s) and Tenant(s) consider carefully whether this option is suitable for them. It should be noted that notices may be sent by email; this includes important documents such as a rent-increase notice and a notice to leave the Let Property.</p>
+<p>To ensure all correspondence can be received and read in good time, the Landlord(s) and Tenant(s) agree to inform each other as soon as possible of any new correspondence address or email address which is to be used instead of those notified in this Agreement, and in any event within seven days of the change.</p>
+<p>If sending a document electronically or by recorded delivery post, the document will be regarded as having been received 48 hours after it was sent, unless the receiving party can provide proof that he or she received it later than this.</p>
+</div>
+
+<div class="clause">
+<h3>5. DETAILS OF THE LET PROPERTY</h3>
+<p>Address:<br><strong>${propertyAddress.replace(/\n/g, '<br>')}</strong> ("the Let Property")</p>
+<p>and (under explanation that any loft and attic are only to be used for the purposes of access for maintenance work instructed by the Landlord or his Letting Agent) together with the whole furnishings, plenishings and effects therein (hereinafter referred to as "the contents") all as detailed in the inventory.</p>
+<p>Type of property: <strong>${selectedProperty.property_type ? selectedProperty.property_type.charAt(0).toUpperCase() + selectedProperty.property_type.slice(1) : 'Flat'}</strong></p>
+<p>Any other areas/facilities included with the Let Property: Not specified</p>
+<p>Any shared areas/facilities: Not specified</p>
+<p>Any excluded areas/facilities: Not specified</p>
+<p>The Let Property is furnished. See the inventory for further details.</p>
+<p>The Let Property is not located in a rent pressure zone.</p>
+<p>The Let Property is not a House in Multiple Occupation (HMO).</p>
+</div>
+
+<div class="clause">
+<h3>6. START DATE OF THE TENANCY</h3>
+<p>The private residential tenancy will start on: <strong>${fmtShort(f.startDate)}</strong> ("the start date of the tenancy").</p>
+</div>
+
+<div class="clause">
+<h3>7. OCCUPATION AND USE OF THE PROPERTY</h3>
+<p>The Tenant agrees to continue to occupy the Let Property as his or her home and must obtain the Landlord's/Letting Agent's written permission before carrying out any trade, business or profession there.</p>
+</div>
+
+<div class="clause">
+<h3>8. RENT</h3>
+<p>The rent is <strong>£${rent.toFixed(2)}</strong> per calendar month payable in advance on the first day of each calendar month.</p>
+<p>${firstPaymentText}</p>
+<p>${nextPayText}</p>
+<p><strong>Pro-rated rent on move-in:</strong> Where the Tenant moves into the Let Property on a date other than the first day of a calendar month, the rent for the period from the move-in date to the last day of that calendar month shall be calculated on a daily basis. The daily rate is calculated by dividing the monthly rent by the number of days in that calendar month. This pro-rated sum is due and must be paid in cleared funds on or before the move-in date, prior to the commencement of the standard monthly rent payments. Thereafter, the full monthly rent of £${rent.toFixed(2)} shall be payable on the first day of each subsequent calendar month.</p>
+<p><strong>Pro-rated rent on move-out:</strong> Where the tenancy ends on a date other than the last day of a calendar month, the rent due for that final partial month shall be calculated on a daily basis, being the daily rate multiplied by the number of days of occupation in that month. The Tenant shall remain liable for rent up to and including the date on which vacant possession of the Let Property is returned to the Landlord/Letting Agent. Any overpayment of rent beyond the termination date shall be refunded to the Tenant; any shortfall shall remain due and payable. It shall be the Tenant's responsibility to cancel Standing Order payments for rent upon termination of the tenancy. The Tenant shall not effect such cancellation until after the final rent payment due hereunder has been received.</p>
+<p>The rent shall be paid by Banking Standing Order or such other method as agreed between Aurelius Property Management and Tenant.</p>
+<p>Interest on late payment of rent may be charged by the Landlord at eight per cent per year from the date on which the rent is due until payment is made.</p>
+<p>The Tenant shall be held liable for any further reasonable costs incurred by the Landlord through the Tenant's failure to pay rent on time.</p>
+</div>
+</div>
+
+<div class="page">
+<div class="clause">
+<h3>9. RENT RECEIPTS</h3>
+<p>Where any payment of rent is made in cash, the Landlord must provide the Tenant with a dated written receipt for the payment stating: the amount paid, and either (as the case may be) the amount which remains outstanding, or confirmation that no further amount remains outstanding.</p>
+</div>
+
+<div class="clause">
+<h3>10. RENT INCREASES</h3>
+<p>The rent cannot be increased more than once in any twelve-month period and the Landlord must give the Tenant at least three months' notice before any increase can take place. In order to increase the rent, the Landlord must give the Tenant a rent-increase notice, the content of which is set out in "The Private Residential Tenancies (Prescribed Notices and Forms) (Scotland) Regulations 2017".</p>
+<p>Within 21 days of receiving a rent-increase notice, the Tenant can refer the increase to a rent officer for adjudication if he or she considers that the rent increase amount is unreasonable, unless the property is located in a rent pressure zone (RPZ).</p>
+</div>
+
+<div class="clause">
+<h3>11. DEPOSIT</h3>
+<p>The Landlord must lodge any deposit they receive with a tenancy deposit scheme within 30 working days of the start date of the tenancy.</p>
+<p>A tenancy deposit scheme is an independent third-party scheme approved by the Scottish Ministers to hold and protect a deposit until it is due to be repaid.</p>
+<p>At the start date of the tenancy or before, a deposit of <strong>£${deposit.toFixed(2)}</strong> will be paid by the Tenant to the Landlord (via Letting Agent) in cleared funds. The Landlord/Letting Agent will issue a receipt for the deposit to the Tenant. No interest shall be paid by the Landlord to the Tenant for the deposit. The Tenant shall not be entitled to offset any part of the deposit against any rent due by him without the Landlord's/Letting Agent's prior written consent.</p>
+<p>By law, the deposit amount cannot exceed the equivalent of two months' rent and cannot include any premiums.</p>
+<p>The Landlord will be entitled to apply to the relevant Deposit Scheme and request deposit deductions for:</p>
+<ul>
+<li>any rent arrears, and any reasonable costs incurred by the Landlord through the Tenant's failure to pay rent on time;</li>
+<li>breakages, losses or damage to the Let Property, furniture, fixtures and fittings for which the Tenant is liable in terms of this Agreement;</li>
+<li>all sums and any reasonable costs incurred by the Landlord in respect of any cleaning or redecoration which may be required, but which the Tenant has failed to do to ensure the Let Property and contents are left in good tenantable order;</li>
+<li>all sums in respect of any garden maintenance which may be required, but which the Tenant has failed to do;</li>
+<li>the cost of replacement of keys provided but not returned and/or the cost of the replacement of corresponding locks;</li>
+<li>any outstanding bills/accounts for utilities, local authority taxes, or any other accounts opened by the Tenant in reference to the Let Property;</li>
+<li>any legal fees, VAT and outlays incurred by the Landlord as a result of the Tenant's breach of this tenancy agreement;</li>
+<li>any other costs incurred by the Landlord through the Tenant's failure to fulfil the conditions of this Agreement.</li>
+</ul>
+</div>
+
+<div class="clause">
+<h3>12. SUBLETTING AND ASSIGNATION</h3>
+<p>Unless the Tenant has received prior written permission from the Landlord/Letting Agent, the Tenant must not sublet the Let Property (or any part of it); take in a lodger or paying guests; assign the Tenant's interest in the Let Property (or any part of it); or otherwise part with, or give up to another person, possession of the Let Property (or any part of it).</p>
+</div>
+
+<div class="clause">
+<h3>13. NOTIFICATION ABOUT OTHER RESIDENTS</h3>
+<p>If a person aged 16 or over (who is not a Joint Tenant) occupies the Let Property with the Tenant as that person's only or principal home, the Tenant must notify the Landlord/Letting Agent in writing of that person's name and relationship to the Tenant.</p>
+</div>
+
+<div class="clause">
+<h3>14. OVERCROWDING</h3>
+<p>The Tenant must not allow the Let Property to become overcrowded. If the Let Property does become overcrowded, the Landlord can take action to evict the Tenant as the Tenant has breached this term of this Agreement.</p>
+</div>
+
+<div class="clause">
+<h3>15. INSURANCE</h3>
+<p>The Landlord is responsible for paying premiums for any insurance of the building and contents belonging to him or her. The Landlord will have no liability to insure any items belonging to the Tenant. The Tenant is responsible for arranging any contents insurance which the Tenant requires for his or her own belongings.</p>
+</div>
+
+<div class="clause">
+<h3>16. ABSENCES</h3>
+<p>The Tenant agrees to notify the Landlord/Letting Agent if he or she is to be absent from the Let Property for any reason for a period of more than 14 days.</p>
+</div>
+</div>
+
+<div class="page">
+<div class="clause">
+<h3>17. REASONABLE CARE</h3>
+<p>The Tenant agrees to take reasonable care of the Let Property and any common parts, and in particular agrees to take all reasonable steps to:</p>
+<ul>
+<li>keep the Let Property adequately ventilated and heated to prevent condensation;</li>
+<li>not bring any hazardous or combustible goods or material into the Let Property;</li>
+<li>not put any damaging oil, grease, paint or other harmful or corrosive substance into the washing or sanitary appliances or drains;</li>
+<li>not flush anything other than bodily waste and toilet paper down the toilet;</li>
+<li>prevent water pipes freezing in cold weather;</li>
+<li>avoid danger to the Let Property or neighbouring properties by way of fire or flooding;</li>
+<li>ensure the Let Property and its fixtures and fittings are kept clean during the tenancy;</li>
+<li>not interfere with the smoke detectors, carbon monoxide detectors, heat detectors or the fire alarm system;</li>
+<li>not to hang any pictures or affix any posters to the walls without prior written consent from the Landlord/Letting Agent;</li>
+<li>not to keep any dog, cat or other pet without the prior written consent of the Landlord/Letting Agent;</li>
+<li>not use electrical equipment, appliances, multi-socket extenders or adaptors which might overload the existing electrical system;</li>
+<li>drain the central water system in the Let Property if the Let Property is to be left unoccupied and unheated for more than forty-eight hours at any time during the winter months.</li>
+</ul>
+</div>
+
+<div class="clause">
+<h3>18. THE REPAIRING STANDARD AND OTHER INFORMATION</h3>
+<p>The Landlord is responsible for ensuring that the Let Property meets the Repairing Standard. The Landlord must carry out a pre-tenancy check of the Let Property to identify work required to meet the Repairing Standard and notify the Tenant of any such work. The Landlord also has a duty to repair and maintain the Let Property from the start date of the tenancy and throughout the tenancy.</p>
+<p>A privately rented Let Property must meet the Repairing Standard as follows:</p>
+<ul>
+<li>The Let Property must be wind and water tight and in all other respects reasonably fit for people to live in;</li>
+<li>The structure and exterior (including drains, gutters and external pipes) must be in a reasonable state of repair and in proper working order;</li>
+<li>Installations for supplying water, gas and electricity and for sanitation, space heating and heating water must be in a reasonable state of repair and in proper working order;</li>
+<li>Any fixtures, fittings and appliances that the Landlord provides under the tenancy must be in a reasonable state of repair and in proper working order;</li>
+<li>Any furnishings that the Landlord provides under the tenancy must be capable of being used safely for the purpose for which they are designed;</li>
+<li>The Let Property must have a satisfactory way of detecting fires and for giving warning in the event of a fire or suspected fire;</li>
+<li>The Let Property must have a satisfactory way of giving warning if there is a hazardous concentration of carbon monoxide gas.</li>
+</ul>
+<p><strong>GAS SAFETY:</strong> The Landlord must ensure that there is an annual gas safety check on all gas pipework and gas appliances carried out by a Gas Safe registered engineer. The Tenant must be given a copy of the Landlord's Gas Safety certificate.</p>
+<p><strong>ELECTRICAL SAFETY:</strong> The Landlord must ensure that an electrical safety inspection is carried out at least every five years consisting of an Electrical Installation Condition Report (EICR) and Portable Appliance Testing (PAT) on appliances provided by the Landlord.</p>
+<p><strong>ENERGY PERFORMANCE CERTIFICATE (EPC):</strong> A valid EPC (not more than 10 years old) must be given to the Tenant at or before the start date of the tenancy.</p>
+<p><strong>REPAIR TIMETABLE:</strong> The Tenant undertakes to notify the Landlord/Letting Agent in writing as soon as is reasonably practicable of the need for any repair or emergency.</p>
+</div>
+
+<div class="clause">
+<h3>19. LEGIONELLA</h3>
+<p>The Tenant shall report any defect with the water supply including air conditioning units, shower, water tanks, taps and pipe that they are aware of to the Landlord. At the start of the tenancy and throughout, the Landlord must take reasonable steps to assess any risk from exposure to legionella to ensure the safety of the Tenant in the Let Property.</p>
+</div>
+
+<div class="clause">
+<h3>20. ACCESS FOR REPAIRS, INSPECTIONS AND VALUATIONS</h3>
+<p>The Tenant must allow reasonable access to the Let Property for an authorised purpose where the Tenant has been given at least 48 hours' notice, or access is required urgently. Authorised purposes are: carrying out work which the Landlord is required to or is allowed to carry out; inspecting the Let Property to see if any such work is needed; and carrying out a valuation of the Let Property.</p>
+<p>The Landlord and/or his or her Agent shall retain sets of keys for the Let Property which can be used only in circumstances including: in the presence of the Tenant; for maintenance or repair with at least 48 hours' written notice; or in the case of an emergency only after reasonable attempts to get the Tenant's permission.</p>
+</div>
+</div>
+
+<div class="page">
+<div class="clause">
+<h3>21. RESPECT FOR OTHERS</h3>
+<p>The Tenant shall occupy the Let Property solely as a private dwellinghouse and shall neither do nor suffer to be done within the Let Property anything which in the reasonable opinion of the Landlord or the Agent constitutes a nuisance to neighbours.</p>
+<p>The Tenant, those living with him/her, and his/her visitors must not engage in antisocial behaviour to another person. In particular, the Tenant must not make excessive noise; vandalise or damage the Let Property or common parts; leave rubbish in unauthorised places; harass any other Tenant, member of household, visitors, neighbours, or employees of the Landlord or Agent for whatever reason.</p>
+<p>In addition, the Tenant, those living with him/her, and his/her visitors must not engage in unlawful activities including: use or carry offensive weapons; use, sell, cultivate or supply unlawful drugs or sell alcohol; store unlicensed firearms; use the Let Property for illegal or immoral purposes.</p>
+</div>
+
+<div class="clause">
+<h3>22. EQUALITY REQUIREMENTS</h3>
+<p>Under the Equality Act 2010, the Landlord must not unlawfully discriminate against the Tenant or prospective Tenant on the basis of their disability, sex, gender reassignment, pregnancy or maternity, race, religion or belief or sexual orientation.</p>
+</div>
+
+<div class="clause">
+<h3>23. DATA PROTECTION</h3>
+<p>The Landlord must comply with the requirements of the Data Protection Act 2018 and the General Data Protection Regulation (EU). The Tenant hereby acknowledges that his or her personal information will be held for the purposes of administering and managing the tenancy. The Tenant accepts that in the course of administering the tenancy, personal information may be shared with third parties to prevent fraud and ensure all outstanding sums due in respect of the Tenant's occupation of the Let Property are paid.</p>
+</div>
+
+<div class="clause">
+<h3>24. ENDING THE TENANCY</h3>
+<p>This tenancy may be ended by:</p>
+<p><strong>(i) The Tenant giving notice to the Landlord:</strong><br>
+The Tenant giving the Landlord at least 28 days' notice in writing to terminate the tenancy, or any other minimum notice period as otherwise validly agreed between the Landlord and Tenant. Where the Landlord agrees to waive the notice period, his or her agreement must be in writing.</p>
+<p><strong>(ii) The Landlord giving notice to the Tenant,</strong> which is only possible using one of the 18 grounds for eviction set out in schedule 3 of the Act. The Landlord must give the Tenant at least 28 days' notice if on the day the Tenant receives the Notice to Leave the Tenant has been entitled to occupy the Let Property for six months or less. The Landlord must give at least 84 days' notice if the Tenant has been entitled to occupy the Let Property for over six months.</p>
+<p>When the tenancy ends, the Tenant will leave the contents in the rooms or places in which they were at the commencement of this tenancy agreement and be responsible for the washing or cleaning of all loose covers, curtains, blankets and carpets within the Let Property and remove all rubbish from the Let Property.</p>
+<p>Before moving out of the Let Property, the Tenant must:</p>
+<ul>
+<li>leave it in a clean and tidy condition and in good decorative order;</li>
+<li>remove all property not belonging to the Landlord;</li>
+<li>make sure any lodgers, sub-tenants and anyone else living in the Let Property leaves at the same time;</li>
+<li>allow the Landlord and his or her Agent access to the Let Property to show round new Tenants or prospective purchasers;</li>
+<li>submit all the keys in the Tenant's possession to the Landlord;</li>
+<li>replace any of the fixtures, fittings or furnishings in the Let Property which have been damaged or lost;</li>
+<li>give the Landlord/Letting Agent a forwarding address.</li>
+</ul>
+</div>
+
+<div class="clause">
+<h3>25. CONTENTS AND CONDITION</h3>
+<p>The Tenant shall accept the Let Property as they stand as satisfactory in all respects, and shall keep the whole Let Property and contents in good, clean tenantable order and repair and properly heated and aired at all times.</p>
+<p>The Tenant will receive a copy of the inventory no later than the start date of the tenancy. The Tenant has a period of 7 days from the start date of the tenancy to ensure that the inventory is correct and either notify the Landlord/Letting Agent of any discrepancies in writing, or to take no action, after which the Tenant shall be deemed to be fully satisfied with the terms of the inventory.</p>
+</div>
+</div>
+
+<div class="page">
+<div class="clause">
+<h3>26. DECORATION</h3>
+<p>The Tenant must not make any structural alterations or carry out any redecoration of the Let Property without the prior written consent of the Landlord/Letting Agent. Where such consent has been obtained, the Tenant must decorate to the Landlord's/Letting Agent's satisfaction and in a proper and workmanlike manner. The Tenant agrees to keep the Let Property in good decorative repair throughout the tenancy.</p>
+</div>
+
+<div class="clause">
+<h3>27. ALTERATIONS AND IMPROVEMENTS</h3>
+<p>The Tenant must not carry out any improvements or alterations to the Let Property or make any addition thereto or allow any person so to do without obtaining the prior written permission of the Landlord/Letting Agent. The Tenant must not install or set up any equipment or appliance in the Let Property which might overload or interfere with any equipment, apparatus or services in or connected to the Let Property without the prior written permission of the Landlord/Letting Agent.</p>
+</div>
+
+<div class="clause">
+<h3>28. REFUSE AND RECYCLING</h3>
+<p>The Tenant shall be responsible for the proper disposal of all refuse from the Let Property and shall comply with all requirements of the local authority in connection with the disposal of refuse and recycling.</p>
+</div>
+
+<div class="clause">
+<h3>29. UTILITIES AND COUNCIL TAX</h3>
+<p>The Tenant will be responsible for and will pay all accounts for gas, electricity, telephone, broadband, council tax and all other utilities and services consumed at the Let Property during the period of the tenancy unless otherwise agreed in writing with the Landlord. The Tenant shall be responsible for notifying all utility providers and the local authority of the start and end of the tenancy.</p>
+</div>
+
+<div class="clause">
+<h3>30. TELEVISION LICENSING</h3>
+<p>The Tenant shall be responsible for obtaining any television licence required in connection with the use of television receiving equipment at the Let Property during the period of the tenancy.</p>
+</div>
+
+<div class="clause">
+<h3>31. GARDENS</h3>
+<p>Where the Let Property has a garden or outside space, the Tenant shall be responsible for keeping any garden or outside space belonging to or forming part of the Let Property in good, clean and tidy order, and free from weeds and in a reasonable condition throughout the tenancy.</p>
+</div>
+
+<div class="clause">
+<h3>32. VEHICLES AND PARKING</h3>
+<p>The Tenant shall not park any vehicle on the Let Property other than in any designated parking area forming part of the Let Property. The Tenant shall not carry out vehicle repairs on any part of the Let Property without the prior written consent of the Landlord/Letting Agent.</p>
+</div>
+
+<div class="clause">
+<h3>33. NOTICES</h3>
+<p>Any notices required to be served by either party on the other shall be served by recorded delivery letter or by email (as agreed in clause 4 above) to the addresses specified in this Agreement or such other address as may be notified in writing by either party to the other. Any notice so served shall be deemed to have been received 48 hours after it was sent, unless the receiving party can provide proof that he or she received it later than this.</p>
+</div>
+
+<div class="clause">
+<h3>34. LANDLORD'S OBLIGATIONS</h3>
+<p>The Landlord shall allow the Tenant to occupy the Let Property without interruption or disturbance from the Landlord, his Agent or anyone claiming under the Landlord (provided the Tenant keeps to the terms of this Agreement). The Landlord shall fulfil any obligation placed upon the Landlord by any Act of Parliament or statutory instrument applicable to private residential tenancies in Scotland, and shall fulfil his or her obligations under this Agreement.</p>
+</div>
+</div>
+
+<div class="page">
+<div class="clause">
+<h3>35. COMMON PARTS</h3>
+<p>Where the Let Property forms part of a larger property, the Tenant is entitled to the use of any common parts of the building which are used in connection with the Let Property. The Tenant is responsible for keeping any common parts clean and tidy and must comply with any rules regarding the use of common parts.</p>
+</div>
+
+<div class="clause">
+<h3>36. HMO</h3>
+<p>The Tenant will ensure that the Let Property does not become an unlicensed House in Multiple Occupation (HMO) without the prior written consent of the Landlord/Letting Agent. The Tenant will be liable for reasonable costs and expenses payable by the Landlord (via Letting Agent) as a result of the accommodation being, as a consequence of the Tenant's breach, deemed an unlicensed or unregistered HMO.</p>
+</div>
+
+<div class="clause">
+<h3>37. INFORMATION ABOUT THE LET PROPERTY</h3>
+<p>In addition to this Agreement, the Landlord must give to the Tenant: a Gas Safety Certificate; electrical safety inspection reports (EICR and PAT); an Energy Performance Certificate; and a copy of the "Easy Read" notes which explain the statutory terms of the Private Residential Tenancy.</p>
+</div>
+
+<div class="clause">
+<h3>38. REGISTRATION</h3>
+<p>The Landlord confirms that he or she is, or will be by the start date of the tenancy, registered as a landlord with the relevant local authority under Part 8 of the Antisocial Behaviour etc. (Scotland) Act 2004. If the Landlord's registration has been refused or revoked by the local authority, the Landlord must inform the Tenant immediately.</p>
+</div>
+
+<div class="clause">
+<h3>39. LANDLORD'S RIGHT TO SELL OR MORTGAGE</h3>
+<p>Nothing in this Agreement shall prevent the Landlord from selling or mortgaging the Let Property, provided that any such sale or mortgage does not affect the Tenant's right to continue to occupy the Let Property in accordance with this Agreement.</p>
+</div>
+
+<div class="clause">
+<h3>40. PRE-TENANCY CHECK</h3>
+<p>The Landlord has carried out a pre-tenancy check of the Let Property to identify work required to meet the Repairing Standard and has notified the Tenant of any such work required.</p>
+</div>
+
+<div class="clause">
+<h3>41. VOID PROVISIONS</h3>
+<p>Any term or condition of this Agreement which requires the Tenant to pay a sum in connection with the tenancy (other than rent and the deposit) is void and of no effect.</p>
+</div>
+
+<div class="clause">
+<h3>42. PREVIOUS AGREEMENTS</h3>
+<p>This Agreement supersedes all previous agreements between the Landlord and Tenant in respect of the Let Property.</p>
+</div>
+
+<div class="clause">
+<h3>43. RIGHTS OF THIRD PARTIES</h3>
+<p>This Agreement does not give rise to any rights under the Contract (Third Party Rights) (Scotland) Act 2017 which are enforceable by any person who is not a party to this Agreement.</p>
+</div>
+
+<div class="clause">
+<h3>44. APPLICABLE LAW</h3>
+<p>This Agreement shall be governed by and construed in accordance with the law of Scotland and both parties submit to the exclusive jurisdiction of the Scottish courts.</p>
+</div>
+</div>
+
+<div class="page">
+<div class="clause">
+<h3>45. ABANDONMENT</h3>
+<p>Where the Landlord believes that the Tenant has abandoned the Let Property, the Landlord must serve a written notice on the Tenant at the Let Property and at any other address for the Tenant which is known to the Landlord. After the expiry of the relevant notice period the Landlord may apply to the Tribunal for an order ending the tenancy. The Landlord must take reasonable steps to preserve any goods left in the Let Property by the Tenant during the notice period.</p>
+</div>
+
+<div class="clause">
+<h3>46. ELECTRONIC EXECUTION</h3>
+<p>The parties agree that this Agreement may be executed electronically. An electronic signature affixed to this Agreement by either party shall have the same legal effect as a handwritten signature. This Agreement, once electronically signed, shall constitute a binding contract between the parties and shall be enforceable in all respects as if it had been executed in writing.</p>
+<p style="margin-top:8pt;">For the avoidance of doubt, the parties confirm that the use of electronic signatures is governed by the <strong>Electronic Communications Act 2000</strong> (as amended), which gives legal recognition to electronic signatures and the means of their production, communication or verification. The parties further acknowledge that an electronically executed agreement of this nature constitutes a valid and enforceable legal document under Scots law and the provisions of the <strong>Private Housing (Tenancies) (Scotland) Act 2016</strong>.</p>
+<p style="margin-top:8pt;">The record of electronic execution, including the date, time, IP address, typed full name, and drawn signature image, shall be retained by Aurelius Property Management as part of the tenancy audit trail and may be produced as evidence of execution if required.</p>
+</div>
+
+<div style="margin-top: 40pt; border-top: 2px solid #000; padding-top: 20pt;">
+<h2 style="text-align:center; margin-bottom: 20pt;">SIGNATURES</h2>
+
+<p style="margin-bottom: 30pt;">We, the undersigned, agree to be bound by the terms of this Agreement:</p>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40pt; margin-bottom: 30pt;">
+  <div>
+    <p style="font-weight:bold; margin-bottom: 20pt;">TENANT(S)</p>
+    <p>Tenant (1): <strong>${f.tenantName}</strong></p>
+    <p id="tenant-sig-line" style="margin-top: 30pt; border-bottom: 1px solid #000; width: 80%;">&nbsp;</p>
+    <p style="font-size: 9pt; color: #666;">Signature</p>
+    <p id="tenant-date-line" style="margin-top: 20pt; border-bottom: 1px solid #000; width: 80%;">&nbsp;</p>
+    <p style="font-size: 9pt; color: #666;">Date</p>
+  </div>
+  <div>
+    <p style="font-weight:bold; margin-bottom: 20pt;">${user?.full_name ?? 'Aurelius Property Management'}</p>
+    <p id="admin-sig-line" style="margin-top: 30pt; border-bottom: 1px solid #000; width: 80%;">&nbsp;</p>
+    <p style="font-size: 9pt; color: #666;">Signature</p>
+    <p id="admin-date-line" style="margin-top: 20pt; border-bottom: 1px solid #000; width: 80%;">&nbsp;</p>
+    <p style="font-size: 9pt; color: #666;">Date</p>
+  </div>
+</div>
+
+<p style="font-size: 9pt; color: #666; margin-top: 20pt;">This agreement was prepared on ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} by Aurelius Property Management on behalf of the Landlord.</p>
+</div>
+
+<div id="prt-audit-receipt"></div>
+
+</div>
+</div>
+
+</body>
+</html>`
+
+    return html
+  }
+
+  function generatePRTDocument() {
+    const html = _buildPRTHtml()
+    if (!html) return
+    const w = window.open('', '_blank')
+    if (!w) { alert('Please allow pop-ups to generate the PRT document.'); return }
+    w.document.write(html)
+    w.document.close()
+  }
+
+  async function sendPRTToTenant() {
+    if (!selectedProperty || propertyTenancies.length === 0) return
+    const t = propertyTenancies[0]
+    if (!t.tenant_id) return
+    setPrtSending(true)
+    try {
+      const html = _buildPRTHtml()
+      if (!html) throw new Error('Failed to build PRT document')
+
+      const { data, error } = await supabase.from('prt_agreements').insert({
+        property_id: selectedProperty.id,
+        tenancy_id: t.id,
+        tenant_id: t.tenant_id,
+        document_html: html,
+        status: 'pending',
+      }).select('id').single()
+
+      if (error) throw error
+      setSentPrtId(data.id)
+      setSentPrtStatus('pending')
+      setShowPRTGenerator(false)
+      setAdminToast('PRT sent to tenant for signing.')
+      setTimeout(() => setAdminToast(null), 5000)
+      // Notify tenant (in-app + iOS push)
+      const prtSentNotif = {
+        title: 'Tenancy agreement ready to sign',
+        body: 'Your Private Residential Tenancy Agreement has been sent. Please review and sign it.',
+      }
+      await supabase.from('notifications').insert({
+        user_id: t.tenant_id,
+        type: 'prt_sent',
+        ...prtSentNotif,
+        data: { prt_agreement_id: data.id },
+      })
+      supabase.functions.invoke('send-push', {
+        body: { userId: t.tenant_id, ...prtSentNotif, data: { type: 'prt_sent', prt_agreement_id: data.id } },
+      }).catch(err => console.warn('[push:prt_sent]', err))
+    } catch (err) {
+      console.error('[sendPRTToTenant]', err)
+      setAdminToast('Failed to send PRT. Please try again.')
+      setTimeout(() => setAdminToast(null), 5000)
+    } finally {
+      setPrtSending(false)
+    }
+  }
+
+  async function viewSignedPRT() {
+    // Open window immediately (must be synchronous with user gesture to avoid popup blocker)
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<p style="font-family:sans-serif;padding:24px;color:#555">Loading agreement…</p>')
+
+    let html = sentPrtHtml
+    if (!html) {
+      const { data } = await supabase.rpc('get_property_prt_html', { p_property_id: selectedProperty!.id })
+      html = data ?? null
+      if (html) setSentPrtHtml(html)
+    }
+    if (!html) { w.close(); return }
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
   }
 
   async function loadPropertyKeys(propertyId: string) {
@@ -482,6 +1284,85 @@ export default function AdminDashboard() {
         if (!error) supabase.from('key_events').insert({ property_id: selectedProperty.id, key_type: keyType, action: 'returned', person_name: key?.holder_name ?? null, notes: null })
         else console.error('Key return save failed:', error.message)
       })
+  }
+
+  async function loadPropertyDeductions(propertyId: string) {
+    setPropertyDeductionsLoading(true)
+    const { data: mrData } = await supabase.from('maintenance_requests').select('id, title').eq('property_id', propertyId)
+    const mrIds = (mrData ?? []).map((r: { id: string }) => r.id)
+    if (mrIds.length === 0) { setPropertyDeductions([]); setPropertyDeductionsLoading(false); return }
+    const titleMap = Object.fromEntries((mrData ?? []).map((r: { id: string; title: string }) => [r.id, r.title]))
+    const { data: invData } = await supabase
+      .from('contractor_invoices')
+      .select('id, invoice_number, description, total, created_at, maintenance_request_id')
+      .in('maintenance_request_id', mrIds)
+      .eq('status', 'approved')
+      .eq('deduction_queued', true)
+      .order('created_at', { ascending: false })
+    setPropertyDeductions(((invData ?? []) as { id: string; invoice_number: string; description: string | null; total: number; created_at: string; maintenance_request_id: string | null }[]).map(inv => ({
+      id: inv.id,
+      invoice_number: inv.invoice_number,
+      description: inv.description,
+      total: inv.total,
+      created_at: inv.created_at,
+      jobTitle: inv.maintenance_request_id ? titleMap[inv.maintenance_request_id] ?? null : null,
+    })))
+    setPropertyDeductionsLoading(false)
+  }
+
+  async function handleSaveKeyNumber() {
+    if (!selectedProperty) return
+    const parsed = keyNumberDraft.trim() === '' ? null : parseInt(keyNumberDraft.trim(), 10)
+    if (keyNumberDraft.trim() !== '' && isNaN(parsed as number)) return
+    setKeyNumberSaving(true)
+    const { error } = await supabase.from('properties').update({ key_number: parsed }).eq('id', selectedProperty.id)
+    setKeyNumberSaving(false)
+    if (!error) {
+      setSelectedProperty(prev => prev ? { ...prev, key_number: parsed } : prev)
+      setEditingKeyNumber(false)
+    }
+  }
+
+  async function handleSaveManualDeduction() {
+    if (!selectedProperty) return
+    const title = deductionType === 'Custom' ? deductionCustomTitle.trim() : deductionType
+    const amount = parseFloat(deductionAmount.trim())
+    if (!title || isNaN(amount) || amount <= 0) return
+    setDeductionSaving(true)
+    setDeductionError(null)
+    const now = new Date().toISOString()
+    const categoryMap: Record<string, string> = { Inventory: 'general', Legionella: 'plumbing', 'General Maintenance': 'general', Custom: 'general' }
+    const { data: reqData, error: reqErr } = await supabase
+      .from('maintenance_requests')
+      .insert({ property_id: selectedProperty.id, title, description: deductionNotes.trim() || title, category: categoryMap[deductionType], priority: 'medium', status: 'resolved', created_at: now, updated_at: now })
+      .select('id').single()
+    if (reqErr || !reqData) { setDeductionError(reqErr?.message ?? 'Failed to create job'); setDeductionSaving(false); return }
+    const dateTag = new Date().toISOString().slice(0, 7).replace('-', '')
+    const invoiceNumber = `DED-${dateTag}-${Math.floor(1000 + Math.random() * 9000)}`
+    const { error: invErr } = await supabase.from('contractor_invoices').insert({
+      maintenance_request_id: reqData.id,
+      invoice_number: invoiceNumber,
+      description: title,
+      line_items: [],
+      subtotal: amount,
+      vat_rate: 0,
+      vat_amount: 0,
+      total: amount,
+      status: 'approved',
+      invoice_pdf_url: '',
+      deduction_queued: true,
+      notes: deductionNotes.trim() || null,
+      created_at: now,
+      updated_at: now,
+    })
+    setDeductionSaving(false)
+    if (invErr) { setDeductionError(invErr.message); return }
+    setShowAddDeductionModal(false)
+    setDeductionType('Inventory')
+    setDeductionCustomTitle('')
+    setDeductionAmount('')
+    setDeductionNotes('')
+    await loadPropertyDeductions(selectedProperty.id)
   }
 
   async function loadMeterReadings(propertyId: string) {
@@ -631,21 +1512,22 @@ export default function AdminDashboard() {
       const monthEnd = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
       const ytdStart = `${now2.getFullYear()}-01-01`
 
-      const [propsRes, tenanciesForCollRes, paymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes] = await Promise.all([
-        supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, profiles(full_name, email)'),
+      const [propsRes, tenanciesForCollRes, paymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes, vacatedNoticesRes] = await Promise.all([
+        supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, move_out_date, move_in_date, profiles(full_name, email)'),
         supabase.from('tenancies').select('id, property_id, monthly_rent, start_date').eq('is_current', true),
         supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr).neq('payment_method', 'stripe'),
         supabase.from('payments').select('id, tenancy_id, amount, due_date, paid_date, status, payment_method, notes').gte('due_date', monthStart).lte('due_date', monthEnd).neq('payment_method', 'stripe'),
-        supabase.from('rent_payments').select('id, tenancy_id, amount, paid_at').in('status', ['succeeded', 'paid']).gte('paid_at', monthStart).lte('paid_at', monthEnd + 'T23:59:59'),
-        supabase.from('rent_payments').select('amount, paid_at').in('status', ['succeeded', 'paid']).not('paid_at', 'is', null).gte('paid_at', cutoffStr),
+        supabase.from('rent_payments').select('id, tenancy_id, amount, management_fee, repair_deductions, paid_at').in('status', ['succeeded', 'paid']).gte('paid_at', monthStart).lte('paid_at', monthEnd + 'T23:59:59'),
+        supabase.from('rent_payments').select('amount, management_fee, repair_deductions, paid_at').in('status', ['succeeded', 'paid']).not('paid_at', 'is', null).gte('paid_at', cutoffStr),
         supabase.from('maintenance_requests').select('cost, created_at').not('cost', 'is', null).gte('created_at', cutoffStr),
+        supabase.from('tenancy_notices').select('property_id, tenancy_id, vacate_date').gte('vacate_date', monthStart).lte('vacate_date', monthEnd),
       ])
 
-      const allProps = (propsRes.data ?? []) as unknown as { id: string; address: string; monthly_rent: number | null; is_active: boolean; status: string | null; purchase_price: number | null; profiles: { full_name: string | null; email: string }[] | null }[]
+      const allProps = (propsRes.data ?? []) as unknown as { id: string; address: string; monthly_rent: number | null; is_active: boolean; status: string | null; purchase_price: number | null; move_out_date: string | null; move_in_date: string | null; profiles: { full_name: string | null; email: string }[] | null }[]
       setPropertyCount(allProps.length)
 
-      // Rent roll and tenanted count driven by property status (source of truth from the app)
-      const activeProps = allProps.filter(p => p.status === 'active' || p.status === 'tenanted')
+      // Rent roll and tenanted count — notice properties are still occupied
+      const activeProps = allProps.filter(p => p.status === 'active' || p.status === 'tenanted' || p.status === 'notice')
       const rentRoll = activeProps.reduce((s, p) => s + Number(p.monthly_rent ?? 0), 0)
       setMonthlyRentRoll(rentRoll)
       setTenantedCount(activeProps.length)
@@ -661,7 +1543,14 @@ export default function AdminDashboard() {
       // Rent collection for current month — all properties
       const tenanciesForColl = (tenanciesForCollRes.data ?? []) as { id: string; property_id: string; monthly_rent: number | null; start_date: string | null }[]
       const thisMonthPays = (thisMonthPaysRes.data ?? []) as { id: string; tenancy_id: string; amount: number; due_date: string; paid_date: string | null; status: string | null; payment_method: string | null; notes: string | null }[]
-      const stripeThisMonth = (stripeThisMonthRes.data ?? []) as { id: string; tenancy_id: string; amount: number; paid_at: string }[]
+      const stripeThisMonth = (stripeThisMonthRes.data ?? []) as { id: string; tenancy_id: string; amount: number; management_fee: number; repair_deductions: number; paid_at: string }[]
+      setMonthlyMgmtFee(stripeThisMonth.reduce((s, p) => s + Number(p.management_fee ?? 0), 0))
+      setMonthlyRepairDeductions(stripeThisMonth.reduce((s, p) => s + Number(p.repair_deductions ?? 0), 0))
+      const vacatedNotices = (vacatedNoticesRes.data ?? []) as { property_id: string; tenancy_id: string; vacate_date: string }[]
+      const noticeByPropId: Record<string, { tenancyId: string; vacateDate: string }> = {}
+      for (const n of vacatedNotices) {
+        noticeByPropId[n.property_id] = { tenancyId: n.tenancy_id, vacateDate: n.vacate_date }
+      }
       const tenanciesByPropId: Record<string, { id: string; monthly_rent: number | null }[]> = {}
       for (const t of tenanciesForColl) {
         if (!tenanciesByPropId[t.property_id]) tenanciesByPropId[t.property_id] = []
@@ -671,12 +1560,87 @@ export default function AdminDashboard() {
         .sort((a, b) => a.address.localeCompare(b.address))
         .map(prop => {
           const tenancies = tenanciesByPropId[prop.id] ?? []
-          const isTenanted = prop.status === 'active' || prop.status === 'tenanted'
           const landlordEmail = prop.profiles?.[0]?.email ?? ''
           const landlordName = prop.profiles?.[0]?.full_name ?? ''
-          if (!isTenanted) {
-            return { tenancyId: tenancies[0]?.id ?? '', propertyId: prop.id, address: prop.address, expected: Number(prop.monthly_rent ?? 0), collected: 0, isPaid: false, isVacant: true, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName }
+
+          // Determine if vacating this month — check tenancy_notices first, then properties.move_out_date
+          const noticeEntry = noticeByPropId[prop.id]
+          const propMoveOut = prop.move_out_date
+          const vacateDateThisMonth = noticeEntry?.vacateDate ?? (propMoveOut && propMoveOut >= monthStart && propMoveOut <= monthEnd ? propMoveOut : null)
+
+          // Pro-rated: property is vacating (or vacated) this month
+          if (vacateDateThisMonth) {
+            const vacateDay = new Date(vacateDateThisMonth + 'T12:00:00').getDate()
+            const daysInMonth = new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()
+            const monthlyRent = Number(prop.monthly_rent ?? 0)
+            const proRated = Math.round(monthlyRent / daysInMonth * vacateDay * 100) / 100
+            const vacatingTenancyIds = noticeEntry ? [noticeEntry.tenancyId] : tenancies.map(t => t.id)
+            const vacatingTenancyId = noticeEntry?.tenancyId ?? (tenancies[0]?.id ?? '')
+            const manualPays = thisMonthPays.filter(p => vacatingTenancyIds.includes(p.tenancy_id) && p.paid_date)
+            const stripePays = stripeThisMonth.filter(p => vacatingTenancyIds.includes(p.tenancy_id))
+            const collected = manualPays.reduce((s, p) => s + Number(p.amount), 0) + stripePays.reduce((s, p) => s + Number(p.amount), 0)
+            const manualPay = thisMonthPays.find(p => vacatingTenancyIds.includes(p.tenancy_id))
+            return {
+              tenancyId: vacatingTenancyId,
+              propertyId: prop.id,
+              address: prop.address,
+              expected: proRated,
+              collected,
+              isPaid: proRated > 0 && collected >= proRated,
+              isVacant: false,
+              isProRated: true,
+              moveOutDate: vacateDateThisMonth,
+              paymentId: manualPay?.id ?? null,
+              dueDate: manualPay?.due_date ?? null,
+              paymentMethod: stripePays.length > 0 ? 'Stripe (online)' : (manualPays[0]?.payment_method ?? null),
+              paymentNotes: manualPays[0]?.notes ?? null,
+              landlordEmail,
+              landlordName,
+              paidAt: stripePays[0]?.paid_at ?? manualPays[0]?.paid_date ?? null,
+            }
           }
+
+          // Pro-rated: property is moving in — show rent due from move-in date to end of month
+          if (prop.status === 'moving_in' && prop.move_in_date) {
+            const moveInDate = new Date(prop.move_in_date + 'T12:00:00')
+            const moveInDay = moveInDate.getDate()
+            const daysInMonth = new Date(moveInDate.getFullYear(), moveInDate.getMonth() + 1, 0).getDate()
+            const monthlyRent = tenancies.reduce((s, t) => s + Number(t.monthly_rent ?? 0), 0) || Number(prop.monthly_rent ?? 0)
+            const proRated = moveInDay > 1 ? Math.round(((daysInMonth - moveInDay + 1) / daysInMonth) * monthlyRent * 100) / 100 : monthlyRent
+            const tenancyIds = tenancies.map(t => t.id)
+            const tenancyId = tenancies[0]?.id ?? ''
+            const manualPays = thisMonthPays.filter(p => tenancyIds.includes(p.tenancy_id) && p.paid_date)
+            const stripePays = stripeThisMonth.filter(p => tenancyIds.includes(p.tenancy_id))
+            const collected = manualPays.reduce((s, p) => s + Number(p.amount), 0) + stripePays.reduce((s, p) => s + Number(p.amount), 0)
+            const manualPay = thisMonthPays.find(p => tenancyIds.includes(p.tenancy_id))
+            return {
+              tenancyId,
+              propertyId: prop.id,
+              address: prop.address,
+              expected: proRated,
+              collected,
+              isPaid: proRated > 0 && collected >= proRated,
+              isVacant: false,
+              isProRated: true,
+              moveInDate: prop.move_in_date,
+              moveOutDate: undefined,
+              paymentId: manualPay?.id ?? null,
+              dueDate: manualPay?.due_date ?? null,
+              paymentMethod: stripePays.length > 0 ? 'Stripe (online)' : (manualPays[0]?.payment_method ?? null),
+              paymentNotes: manualPays[0]?.notes ?? null,
+              landlordEmail,
+              landlordName,
+              paidAt: stripePays[0]?.paid_at ?? manualPays[0]?.paid_date ?? null,
+            }
+          }
+
+          // Only show Vacant when property has no active tenancy and status confirms it
+          const isTenanted = tenancies.length > 0 || prop.status === 'active' || prop.status === 'tenanted' || prop.status === 'notice'
+          if (!isTenanted) {
+            return { tenancyId: tenancies[0]?.id ?? '', propertyId: prop.id, address: prop.address, expected: 0, collected: 0, isPaid: false, isVacant: true, isProRated: false, moveOutDate: undefined, paymentId: null, dueDate: null, paymentMethod: null, paymentNotes: null, landlordEmail, landlordName, paidAt: null }
+          }
+
+          // Normal tenanted (including notice properties not vacating this month)
           const tenancyIds = tenancies.map(t => t.id)
           const manualPays = thisMonthPays.filter(p => tenancyIds.includes(p.tenancy_id) && p.paid_date)
           const stripePays = stripeThisMonth.filter(p => tenancyIds.includes(p.tenancy_id))
@@ -684,7 +1648,6 @@ export default function AdminDashboard() {
           const expected = expectedFromTenancies > 0 ? expectedFromTenancies : Number(prop.monthly_rent ?? 0)
           const collected = manualPays.reduce((s, p) => s + Number(p.amount), 0) + stripePays.reduce((s, p) => s + Number(p.amount), 0)
           const isPaid = expected > 0 && collected >= expected
-          // For Mark Paid: target the first tenancy that hasn't been paid yet this month
           const unpaidTenancy = tenancies.find(t =>
             !thisMonthPays.find(p => p.tenancy_id === t.id && p.paid_date) &&
             !stripeThisMonth.find(p => p.tenancy_id === t.id)
@@ -698,14 +1661,23 @@ export default function AdminDashboard() {
             collected,
             isPaid,
             isVacant: false,
+            isProRated: false,
+            moveOutDate: undefined,
             paymentId: manualPay?.id ?? null,
             dueDate: manualPay?.due_date ?? null,
             paymentMethod: stripePays.length > 0 ? 'Stripe (online)' : (manualPays[0]?.payment_method ?? null),
             paymentNotes: manualPays[0]?.notes ?? null,
             landlordEmail,
             landlordName,
+            paidAt: stripePays[0]?.paid_at ?? manualPays[0]?.paid_date ?? null,
           }
         })
+      collectionItems.sort((a, b) => {
+        if (a.isPaid && !b.isPaid) return -1
+        if (!a.isPaid && b.isPaid) return 1
+        if (a.paidAt && b.paidAt) return b.paidAt.localeCompare(a.paidAt)
+        return a.address.localeCompare(b.address)
+      })
       setRentCollection(collectionItems)
 
       // Actual payments received, grouped by month — manual (paid_date) + Stripe (paid_at)
@@ -714,17 +1686,25 @@ export default function AdminDashboard() {
         const key = String(pay.paid_date).slice(0, 7)
         payByMonth[key] = (payByMonth[key] ?? 0) + Number(pay.amount ?? 0)
       }
+      const mgmtFeeByMonth: Record<string, number> = {}
+      const repairDeductionsByMonth: Record<string, number> = {}
       for (const pay of stripeHistoryRes.data ?? []) {
         const key = String(pay.paid_at).slice(0, 7)
-        payByMonth[key] = (payByMonth[key] ?? 0) + Number(pay.amount ?? 0)
+        payByMonth[key] = (payByMonth[key] ?? 0) + Number((pay as { amount: number; management_fee: number; repair_deductions: number; paid_at: string }).amount ?? 0)
+        mgmtFeeByMonth[key] = (mgmtFeeByMonth[key] ?? 0) + Number((pay as { amount: number; management_fee: number; repair_deductions: number; paid_at: string }).management_fee ?? 0)
+        repairDeductionsByMonth[key] = (repairDeductionsByMonth[key] ?? 0) + Number((pay as { amount: number; management_fee: number; repair_deductions: number; paid_at: string }).repair_deductions ?? 0)
       }
 
-      // Maintenance cost by month
+      // Maintenance cost by month — from maintenance_requests.cost + stripe repair_deductions
       const maintByMonth: Record<string, number> = {}
       for (const m of maintRes.data ?? []) {
         const key = String(m.created_at).slice(0, 7)
         maintByMonth[key] = (maintByMonth[key] ?? 0) + Number(m.cost ?? 0)
       }
+      for (const [key, val] of Object.entries(repairDeductionsByMonth)) {
+        maintByMonth[key] = (maintByMonth[key] ?? 0) + val
+      }
+
 
       // Build 12-month snapshots.
       // rentExpected for each month = sum of monthly_rent for tenancies whose start_date
@@ -747,6 +1727,7 @@ export default function AdminDashboard() {
           rentCollected: payByMonth[key] ?? 0,
           rentExpected: expectedForMonth,
           maintenanceCost: maintByMonth[key] ?? 0,
+          managementFee: mgmtFeeByMonth[key] ?? 0,
         })
       }
       setSnapshots(snaps)
@@ -783,7 +1764,7 @@ export default function AdminDashboard() {
 
   async function loadUsers() {
     setUsersLoading(true)
-    const { data } = await supabase.from('users').select('id, email, full_name, role, status').order('created_at', { ascending: false })
+    const { data } = await supabase.from('users').select('id, email, full_name, role, status, management_fee_percent').order('created_at', { ascending: false })
     setUsers((data ?? []) as UserRow[])
     setUsersLoaded(true)
     setUsersLoading(false)
@@ -833,16 +1814,18 @@ export default function AdminDashboard() {
   async function loadAdminProps() {
     setAdminPropsLoading(true)
     setAdminPropsError(null)
-    const { data, error } = await supabase.from('properties').select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, profiles(full_name, email)').order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('properties').select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, move_in_date, move_out_date, profiles(full_name, email)').order('created_at', { ascending: false })
     if (error) {
       console.error('[AdminDashboard] loadAdminProps error:', error)
       setAdminPropsError(error.message)
       setAdminPropsLoading(false)
       return
     }
-    setAdminProps((data ?? []) as unknown as AdminPropRow[])
+    const props = (data ?? []) as unknown as AdminPropRow[]
+    setAdminProps(props)
     setAdminPropsLoaded(true)
     setAdminPropsLoading(false)
+    applyMoveIns(props)
   }
 
   async function loadMaintenance() {
@@ -865,9 +1848,63 @@ export default function AdminDashboard() {
     const { data } = await supabase
       .from('tenancy_notices')
       .select('id, tenancy_id, tenant_id, property_id, notice_date, vacate_date, status, created_at, properties(address), profiles(full_name, email)')
-      .eq('status', 'pending')
+      .in('status', ['pending', 'acknowledged'])
       .order('created_at', { ascending: false })
-    setTenancyNotices((data ?? []) as unknown as TenancyNotice[])
+    const notices = (data ?? []) as unknown as TenancyNotice[]
+    setTenancyNotices(notices)
+    applyMoveOuts(notices)
+  }
+
+  async function applyMoveIns(props: AdminPropRow[]) {
+    const today = new Date().toISOString().slice(0, 10)
+    const toActivate = props.filter(p => p.move_in_date && p.move_in_date <= today)
+    const toVacate = props.filter(p => p.move_out_date && p.move_out_date <= today)
+    await Promise.all([
+      ...toActivate.map(p =>
+        supabase.from('properties').update({ status: 'active', is_active: true, move_in_date: null }).eq('id', p.id)
+      ),
+      ...toVacate.map(p =>
+        supabase.from('properties').update({ status: 'vacant', is_active: false, move_out_date: null }).eq('id', p.id)
+      ),
+    ])
+    if (toActivate.length > 0 || toVacate.length > 0) {
+      setAdminProps(prev => prev.map(p => {
+        if (toActivate.some(t => t.id === p.id)) return { ...p, status: 'active' as PropStatus, is_active: true, move_in_date: null }
+        if (toVacate.some(t => t.id === p.id)) return { ...p, status: 'vacant' as PropStatus, is_active: false, move_out_date: null }
+        return p
+      }))
+    }
+  }
+
+  async function applyMoveOuts(notices: TenancyNotice[]) {
+    const today = new Date().toISOString().slice(0, 10)
+    const toVacate = notices.filter(n => n.vacate_date && n.vacate_date <= today)
+    if (toVacate.length === 0) return
+    await Promise.all([
+      ...toVacate.map(n =>
+        supabase.from('properties').update({ status: 'vacant', is_active: false }).eq('id', n.property_id)
+      ),
+      ...toVacate.filter(n => n.tenancy_id).map(n =>
+        supabase.from('tenancies').update({ status: 'ended', is_current: false }).eq('id', n.tenancy_id)
+      ),
+      ...toVacate.map(n =>
+        supabase.from('tenancy_notices').update({ status: 'completed' }).eq('id', n.id)
+      ),
+    ])
+    setTenancyNotices(prev => prev.filter(n => !toVacate.some(t => t.id === n.id)))
+    setAdminProps(prev => prev.map(p => {
+      const notice = toVacate.find(n => n.property_id === p.id)
+      return notice ? { ...p, status: 'vacant' as PropStatus, is_active: false } : p
+    }))
+  }
+
+  function toggleTodoCheck(itemId: string, idx: number) {
+    const current = todoChecks[itemId] ?? []
+    const next = [...current]
+    next[idx] = !next[idx]
+    const updated = { ...todoChecks, [itemId]: next }
+    setTodoChecks(updated)
+    try { localStorage.setItem('aurelius-todo-checks', JSON.stringify(updated)) } catch { /* ignore */ }
   }
 
   async function acknowledgeNotice(noticeId: string, propertyId: string) {
@@ -1131,6 +2168,39 @@ export default function AdminDashboard() {
     if (nonStaffUsers.length === 0) loadNonStaffUsers()
   }
 
+  function openStaffInviteModal() {
+    setStaffInviteEmail('')
+    setStaffInviteRole('admin')
+    setStaffInviteName('')
+    setStaffInviteError(null)
+    setStaffInviteSuccess(false)
+    setShowStaffInviteModal(true)
+  }
+
+  async function handleSendStaffInvite() {
+    if (!staffInviteEmail.trim()) { setStaffInviteError('Email address is required.'); return }
+    setStaffInviteSaving(true)
+    setStaffInviteError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ?? ''
+      const res = await supabase.functions.invoke('send-invite', {
+        body: { email: staffInviteEmail.trim(), role: staffInviteRole, name: staffInviteName.trim() || undefined },
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.error || res.data?.ok === false) {
+        setStaffInviteError(res.data?.error ?? res.error?.message ?? 'Failed to send invite.')
+      } else {
+        setStaffInviteSuccess(true)
+        setTimeout(() => { setStaffLoaded(false); loadStaff() }, 1200)
+      }
+    } catch (err) {
+      setStaffInviteError(String(err))
+    } finally {
+      setStaffInviteSaving(false)
+    }
+  }
+
   function confirmDeleteProperty(p: AdminPropRow) {
     setDeletePropertyId(p.id)
     setDeletePropertyAddress(p.address)
@@ -1292,26 +2362,6 @@ export default function AdminDashboard() {
     setListingRegSaving(false)
   }
 
-  async function handleSmokeMark(completed: boolean) {
-    if (!selectedProperty) return
-    setSmokeSaving(true)
-    if (completed) {
-      const { data } = await supabase
-        .from('compliance_items')
-        .insert({ property_id: selectedProperty.id, type: 'Smoke / Heat / CO Alarms', issue_date: new Date().toISOString().slice(0, 10), status: 'active' })
-        .select('id, property_id, type, issue_date, expiry_date, status, document_url, notes')
-        .single()
-      if (data) setComplianceItems(prev => [...prev, data as ComplianceItem])
-    } else {
-      const match = complianceItems.find(c => c.type.toLowerCase().includes('smoke') || c.type.toLowerCase().replace(/[^a-z]/g, '').includes('smoke'))
-      if (match) {
-        await supabase.from('compliance_items').delete().eq('id', match.id)
-        setComplianceItems(prev => prev.filter(c => c.id !== match.id))
-      }
-    }
-    setSmokeSaving(false)
-  }
-
   async function navigateToComplianceProperty(propertyId: string) {
     const cached = adminProps.find(p => p.id === propertyId)
     if (cached) { setSelectedProperty(cached); setTab('properties'); return }
@@ -1362,11 +2412,12 @@ export default function AdminDashboard() {
   const filteredSnaps = (() => { const n = analyticsPeriod === '3M' ? 3 : analyticsPeriod === '6M' ? 6 : 12; return snapshots.slice(-n) })()
   const totalCollected = filteredSnaps.reduce((s, r) => s + r.rentCollected, 0)
   const totalMaintenance = filteredSnaps.reduce((s, r) => s + r.maintenanceCost, 0)
+  const totalMgmtFee = filteredSnaps.reduce((s, r) => s + r.managementFee, 0)
   // rentExpected in each snapshot already excludes months before a tenancy started,
   // so this ratio accurately reflects collection against rent actually due.
   const tenantedExpectedTotal = filteredSnaps.reduce((s, r) => s + r.rentExpected, 0)
   const tenantedCollectionRate = tenantedExpectedTotal > 0
-    ? (totalCollected / tenantedExpectedTotal) * 100
+    ? Math.min((totalCollected / tenantedExpectedTotal) * 100, 100)
     : null
 
   const filteredUsers = users.filter((u) => {
@@ -1465,13 +2516,130 @@ export default function AdminDashboard() {
     setTimeout(() => w.print(), 400)
   }
 
+  const daysUntilDate = (d: string) => Math.ceil((new Date(d + 'T12:00:00').getTime() - Date.now()) / 86400000)
+  const daysLabel = (days: number) => days === 0 ? 'today' : days === 1 ? 'tomorrow' : days < 0 ? `${Math.abs(days)} days ago` : `in ${days} days`
+
+  interface TodoItem { id: string; priority: 'urgent' | 'soon' | 'info'; category: string; title: string; detail: string; action?: () => void; actionLabel?: string }
+  const todoItems: TodoItem[] = [
+    ...adminProps.filter(p => p.move_in_date).map(p => {
+      const days = daysUntilDate(p.move_in_date!)
+      return { id: `movein-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move In', title: p.address, detail: `Tenant moving in ${daysLabel(days)} — ${fmtDate(p.move_in_date!)}`, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
+    }),
+    ...adminProps.filter(p => p.move_out_date).map(p => {
+      const days = daysUntilDate(p.move_out_date!)
+      return { id: `moveout-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move Out', title: p.address, detail: `Tenant moving out ${daysLabel(days)} — ${fmtDate(p.move_out_date!)}`, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
+    }),
+    ...tenancyNotices.map(n => {
+      const days = daysUntilDate(n.vacate_date)
+      return { id: `notice-${n.id}`, priority: (days <= 7 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Notice', title: n.properties?.address ?? 'Unknown property', detail: `${n.profiles?.full_name ?? 'Tenant'} vacating ${daysLabel(days)} — ${fmtDate(n.vacate_date)}`, action: () => { const p = adminProps.find(pr => pr.id === n.property_id); if (p) { setSelectedProperty(p); setTab('properties') } }, actionLabel: 'View' }
+    }),
+    ...viewingRequests.filter(v => v.status === 'pending').map(v => ({
+      id: `viewing-${v.id}`, priority: 'soon' as const, category: 'Viewing', title: v.properties?.address ?? 'Unknown property', detail: `${v.name} — ${fmtDate(v.preferred_date)} at ${v.preferred_time}`, action: () => setTab('diary'), actionLabel: 'Confirm',
+    })),
+    ...maintenanceItems.filter(m => (m.status === 'open' || m.status === 'in_progress') && (m.priority === 'emergency' || m.priority === 'urgent')).map(m => ({
+      id: `maint-${m.id}`, priority: (m.priority === 'emergency' ? 'urgent' : 'soon') as TodoItem['priority'], category: m.priority === 'emergency' ? 'Emergency' : 'Urgent Maintenance', title: m.title ?? 'Maintenance request', detail: m.status === 'in_progress' ? 'In progress' : 'Open — not yet assigned', action: () => setTab('maintenance'), actionLabel: 'View',
+    })),
+    ...complianceAlerts.map(c => {
+      const days = c.expiry_date ? daysUntilDate(c.expiry_date) : -999
+      return { id: `cert-${c.id}`, priority: (days < 0 ? 'urgent' : days <= 30 ? 'soon' : 'info') as TodoItem['priority'], category: 'Certificate', title: c.properties?.address ?? 'Unknown property', detail: `${c.type} ${days < 0 ? `expired ${Math.abs(days)} days ago` : `expiring ${daysLabel(days)}`}`, action: () => { setTab('maintenance'); setMaintenanceFilter('compliance') }, actionLabel: 'View' }
+    }),
+  ].sort((a, b) => ({ urgent: 0, soon: 1, info: 2 }[a.priority]) - ({ urgent: 0, soon: 1, info: 2 }[b.priority]))
+
+  const todoUrgentCount = todoItems.filter(i => i.priority === 'urgent').length
+
   return (
-    <DashShell tabs={buildTabs(viewingRequests.filter(r => r.status === 'pending').length, viewingRequests.filter(r => r.status !== 'cancelled' && r.preferred_date === new Date().toISOString().slice(0, 10)).length)} active={tab} onChange={setTab} metrics={metrics} userInitials={userInitials}>
+    <DashShell tabs={buildTabs(viewingRequests.filter(r => r.status === 'pending').length, viewingRequests.filter(r => r.status !== 'cancelled' && r.preferred_date === new Date().toISOString().slice(0, 10)).length, todoUrgentCount)} active={tab} onChange={setTab} metrics={metrics} userInitials={userInitials}>
+
+      {adminToast && (
+        <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#1d4ed8', color: '#fff', borderRadius: 10, padding: '10px 18px', fontSize: 13, fontWeight: 500, boxShadow: '0 4px 20px rgba(0,0,0,0.4)', maxWidth: '90vw', textAlign: 'center', pointerEvents: 'none' }}>
+          {adminToast}
+        </div>
+      )}
 
       {quickError && (
         <div style={{ margin: '12px 16px 0', padding: '10px 14px', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontSize: 13, color: '#f87171' }}>{quickError}</span>
           <button type="button" onClick={() => setQuickError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      )}
+
+      {/* ── TO DO ── */}
+      {tab === 'todo' && (
+        <div className="px-4 py-5 flex flex-col gap-3">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <p style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8899aa' }}>Action Items</p>
+            {todoItems.length > 0 && (
+              <span style={{ fontSize: 11, color: '#8899aa' }}>{todoItems.length} item{todoItems.length !== 1 ? 's' : ''}</span>
+            )}
+          </div>
+          {(adminPropsLoading || maintenanceLoading) ? (
+            [...Array(4)].map((_, i) => <div key={i} style={{ height: 68, borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }} className="animate-pulse" />)
+          ) : todoItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="#8899aa" style={{ opacity: 0.3, marginBottom: 12 }}><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+              <p style={{ fontSize: 14, color: '#8899aa', margin: 0 }}>All clear — nothing outstanding</p>
+            </div>
+          ) : (
+            todoItems.map(item => {
+              const colors = {
+                urgent: { dot: '#f87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.2)', badge: 'rgba(248,113,113,0.15)', badgeText: '#f87171' },
+                soon:   { dot: '#fbbf24', bg: 'rgba(251,191,36,0.06)',  border: 'rgba(251,191,36,0.18)',  badge: 'rgba(251,191,36,0.15)',  badgeText: '#fbbf24' },
+                info:   { dot: '#60a5fa', bg: 'rgba(96,165,250,0.05)',  border: 'rgba(96,165,250,0.15)',  badge: 'rgba(96,165,250,0.12)',  badgeText: '#60a5fa' },
+              }[item.priority]
+              const isExpanded = expandedTodoId === item.id
+              const checklist = TODO_CHECKLISTS[item.category] ?? []
+              const checks = todoChecks[item.id] ?? []
+              const doneCount = checks.filter(Boolean).length
+              const allDone = checklist.length > 0 && doneCount === checklist.length
+              return (
+                <div key={item.id} style={{ borderRadius: 12, border: `1px solid ${isExpanded ? colors.border : colors.border}`, overflow: 'hidden' }}>
+                  {/* Item header row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', background: colors.bg }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: allDone ? '#4ade80' : colors.dot, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                        <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 4, background: allDone ? 'rgba(74,222,128,0.15)' : colors.badge, color: allDone ? '#4ade80' : colors.badgeText }}>{allDone ? 'Complete' : item.category}</span>
+                        {checklist.length > 0 && !allDone && (
+                          <span style={{ fontSize: 9, color: '#8899aa' }}>{doneCount}/{checklist.length}</span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: 13, color: '#e8edf5', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</p>
+                      <p style={{ fontSize: 11, color: '#8899aa', margin: '2px 0 0' }}>{item.detail}</p>
+                    </div>
+                    {checklist.length > 0 && (
+                      <button type="button" onClick={() => setExpandedTodoId(isExpanded ? null : item.id)}
+                        style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 7, background: isExpanded ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.07)', color: '#c8d4e0', border: '1px solid rgba(255,255,255,0.12)', fontSize: 11, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {item.actionLabel ?? 'View'}
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}><path d="M7 10l5 5 5-5z"/></svg>
+                      </button>
+                    )}
+                  </div>
+                  {/* Checklist dropdown */}
+                  {isExpanded && checklist.length > 0 && (
+                    <div style={{ background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px 14px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                        {checklist.map((task, idx) => {
+                          const checked = checks[idx] ?? false
+                          return (
+                            <button key={idx} type="button" onClick={() => toggleTodoCheck(item.id, idx)}
+                              style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '9px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: idx < checklist.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                              <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, marginTop: 1, border: `1.5px solid ${checked ? '#4ade80' : 'rgba(255,255,255,0.2)'}`, background: checked ? 'rgba(74,222,128,0.15)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="#4ade80"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>}
+                              </div>
+                              <span style={{ fontSize: 12, color: checked ? '#4ade80' : '#c8d4e0', lineHeight: 1.5, textDecoration: checked ? 'line-through' : 'none', opacity: checked ? 0.7 : 1 }}>{task}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {allDone && (
+                        <p style={{ fontSize: 11, color: '#4ade80', marginTop: 10, textAlign: 'center' }}>All tasks complete</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
         </div>
       )}
 
@@ -1607,20 +2775,44 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {analyticsLoading && rentCollection.length === 0 ? (
+            <div className="flex flex-col gap-3">{[...Array(6)].map((_, i) => <div key={i} style={{ ...CARD, height: 72, opacity: 0.4 }} className="animate-pulse" />)}</div>
+          ) : (() => {
+            const rows = rentCollection.filter(r => !r.isVacant)
+            const exp = rows.reduce((s, r) => s + r.expected, 0)
+            const coll = rows.reduce((s, r) => s + Math.min(r.collected, r.expected), 0)
+            const outstanding = Math.max(exp - coll, 0)
+            const rate = exp > 0 ? Math.min((coll / exp) * 100, 100) : null
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <DarkKPI title="Rent Roll" value={monthlyRentRoll > 0 ? gbp(monthlyRentRoll) : '—'} accent="#4ade80" subtitle="This month" />
+                <DarkKPI title="Occupancy" value={occupancyRate != null ? `${occupancyRate.toFixed(0)}%` : '—'} accent={occupancyRate != null && occupancyRate >= 80 ? '#4ade80' : '#fbbf24'} subtitle={`${tenantedCount ?? 0} of ${propertyCount ?? 0} properties`} />
+                <DarkKPI title="Collection Rate" value={rate != null ? `${rate.toFixed(1)}%` : '—'} accent={rate != null && rate >= 90 ? '#4ade80' : '#fbbf24'} subtitle="This month" />
+                <DarkKPI title="Collected" value={coll > 0 ? gbp(coll) : '—'} accent="#4ade80" subtitle="This month" />
+                <DarkKPI title="Rent Due" value={outstanding > 0 ? gbp(outstanding, 2) : '—'} accent="#fbbf24" subtitle="Outstanding this month" />
+                <DarkKPI title="Management Fee" value={gbp(monthlyMgmtFee)} accent="#4ade80" subtitle="Collected this month" />
+                <DarkKPI title="Maintenance" value={gbp(monthlyRepairDeductions)} accent="#fbbf24" subtitle="Deducted this month" />
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* ── ANALYTICS DETAIL ── */}
+      {tab === 'analyticsDetail' && (
+        <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa' }}>Analytics</p>
+            <button type="button" onClick={() => { setAnalyticsLoaded(false); loadAnalytics() }}
+              style={{ padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            </button>
+          </div>
+
           {analyticsLoading && snapshots.length === 0 ? (
             <div className="flex flex-col gap-3">{[...Array(4)].map((_, i) => <div key={i} style={{ ...CARD, height: 80, opacity: 0.4 }} className="animate-pulse" />)}</div>
           ) : (
             <>
-              {/* KPI grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <DarkKPI title="Monthly Rent Roll" value={monthlyRentRoll > 0 ? gbp(monthlyRentRoll) : '—'} accent="#4ade80" />
-                <DarkKPI title="Occupancy" value={occupancyRate != null ? `${occupancyRate.toFixed(0)}%` : '—'} accent={occupancyRate != null && occupancyRate >= 80 ? '#4ade80' : '#fbbf24'} />
-                <DarkKPI title={`YTD Net ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdNet) : '—'} accent={ytdNet >= 0 ? '#4ade80' : '#f87171'} />
-                <DarkKPI title="Collection Rate" value={tenantedCollectionRate != null ? `${tenantedCollectionRate.toFixed(1)}%` : '—'} accent={tenantedCollectionRate != null && tenantedCollectionRate >= 90 ? '#4ade80' : '#fbbf24'} subtitle="Tenanted properties only" />
-                <DarkKPI title={`Commission (${analyticsPeriod})`} value={totalCollected > 0 ? gbp(totalCollected * 0.08) : '—'} accent="#4ade80" />
-                <DarkKPI title={`Maintenance (${analyticsPeriod})`} value={gbp(totalMaintenance)} accent="#fbbf24" />
-              </div>
-
               {/* Period picker */}
               <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
                 {(['3M', '6M', '12M'] as AnalyticsPeriod[]).map((p) => (
@@ -1631,20 +2823,14 @@ export default function AdminDashboard() {
                 ))}
               </div>
 
-              {/* Rent Collected KPI */}
-              <div style={CARD}>
-                <div style={{ padding: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-                  <div>
-                    <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Rent Collected ({analyticsPeriod})</p>
-                    <p style={{ fontSize: 32, fontWeight: 300, color: '#e8edf5', lineHeight: 1, fontFamily: 'Georgia, serif' }}>{gbp(totalCollected)}</p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                      <span style={{ fontSize: 11, color: '#8899aa' }}>Rent roll: </span>
-                      <span style={{ fontSize: 11, color: '#4ade80' }}>{gbp(monthlyRentRoll)}/mo</span>
-                      <span style={{ fontSize: 11, color: '#8899aa' }}>· {tenantedCount ?? 0} tenanted</span>
-                    </div>
-                  </div>
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="rgba(255,255,255,0.06)"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
-                </div>
+              {/* Period KPI grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <DarkKPI title={`Collected (${analyticsPeriod})`} value={totalCollected > 0 ? gbp(totalCollected) : '—'} accent="#4ade80" />
+                <DarkKPI title={`Net (${analyticsPeriod})`} value={totalCollected > 0 ? gbp(totalCollected - totalMaintenance) : '—'} accent={(totalCollected - totalMaintenance) >= 0 ? '#4ade80' : '#f87171'} />
+                <DarkKPI title={`Management Fee (${analyticsPeriod})`} value={totalMgmtFee > 0 ? gbp(totalMgmtFee) : '—'} accent="#4ade80" />
+                <DarkKPI title={`Maintenance (${analyticsPeriod})`} value={gbp(totalMaintenance)} accent="#fbbf24" />
+                <DarkKPI title={`YTD Gross ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdGross) : '—'} accent="#4ade80" />
+                <DarkKPI title={`YTD Net ${new Date().getFullYear()}`} value={ytdGross > 0 ? gbp(ytdNet) : '—'} accent={ytdNet >= 0 ? '#4ade80' : '#f87171'} />
               </div>
 
               {/* Bar chart */}
@@ -1699,10 +2885,11 @@ export default function AdminDashboard() {
       {tab === 'rent' && !selectedProperty && (() => {
         const activeRows = rentCollection.filter(r => !r.isVacant)
         const totalExp = activeRows.reduce((s, r) => s + r.expected, 0)
-        const totalColl = activeRows.reduce((s, r) => s + r.collected, 0)
-        const outstanding = totalExp - totalColl
+        const totalColl = activeRows.reduce((s, r) => s + Math.min(r.collected, r.expected), 0)
+        const outstanding = Math.max(totalExp - totalColl, 0)
         const paidCount = activeRows.filter(r => r.isPaid).length
         const fraction = totalExp > 0 ? totalColl / totalExp : 0
+        const displayFraction = Math.min(fraction, 1)
         const monthName = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
         const ringColor = fraction >= 1 ? '#4ade80' : fraction >= 0.75 ? '#fbbf24' : '#f87171'
         return (
@@ -1721,12 +2908,12 @@ export default function AdminDashboard() {
                   <svg width="72" height="72" viewBox="0 0 72 72">
                     <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="8"/>
                     <circle cx="36" cy="36" r="28" fill="none" stroke={ringColor} strokeWidth="8"
-                      strokeDasharray={`${2 * Math.PI * 28 * fraction} ${2 * Math.PI * 28 * (1 - fraction)}`}
+                      strokeDasharray={`${2 * Math.PI * 28 * displayFraction} ${2 * Math.PI * 28 * (1 - displayFraction)}`}
                       strokeDashoffset={2 * Math.PI * 28 * 0.25}
                       strokeLinecap="round"/>
                   </svg>
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: ringColor, fontFamily: 'Georgia, serif' }}>{Math.round(fraction * 100)}%</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: ringColor, fontFamily: 'Georgia, serif' }}>{Math.min(Math.round(fraction * 100), 100)}%</span>
                     <span style={{ fontSize: 8, color: '#8899aa', letterSpacing: '0.05em' }}>paid</span>
                   </div>
                 </div>
@@ -1735,7 +2922,7 @@ export default function AdminDashboard() {
                   <p style={{ fontSize: 28, fontWeight: 300, color: '#4ade80', fontFamily: 'Georgia, serif', lineHeight: 1 }}>{gbp(totalColl)}</p>
                   <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>of {gbp(totalExp)} expected · {paidCount}/{activeRows.length} paid</p>
                   {outstanding > 0 && (
-                    <p style={{ fontSize: 11, color: '#fbbf24', marginTop: 6 }}>{gbp(outstanding)} outstanding</p>
+                    <p style={{ fontSize: 11, color: '#fbbf24', marginTop: 6 }}>{gbp(outstanding, 2)} outstanding</p>
                   )}
                   {outstanding === 0 && rentCollection.length > 0 && (
                     <p style={{ fontSize: 11, color: '#4ade80', marginTop: 6 }}>All rents collected</p>
@@ -1744,7 +2931,7 @@ export default function AdminDashboard() {
               </div>
               {/* Progress bar */}
               <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${fraction * 100}%`, background: ringColor, borderRadius: 3, transition: 'width 0.6s ease' }} />
+                <div style={{ height: '100%', width: `${displayFraction * 100}%`, background: ringColor, borderRadius: 3, transition: 'width 0.6s ease' }} />
               </div>
             </div>
 
@@ -1758,7 +2945,7 @@ export default function AdminDashboard() {
                   {rentCollection.map((row, i) => (
                     <div key={i}>
                       <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: row.isVacant ? '#8899aa' : row.isPaid ? '#4ade80' : '#fbbf24', flexShrink: 0, marginTop: 2 }} />
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: row.isVacant ? '#8899aa' : row.isProRated && !row.isPaid ? '#fb923c' : row.isPaid ? '#4ade80' : '#fbbf24', flexShrink: 0, marginTop: 2 }} />
                         <button type="button"
                           onClick={() => navigateToRentProperty(row.propertyId)}
                           style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
@@ -1770,9 +2957,17 @@ export default function AdminDashboard() {
                           <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>
                             {row.isVacant
                               ? 'Vacant'
-                              : row.isPaid
-                                ? `Paid${row.paymentMethod ? ` · ${row.paymentMethod}` : ''}${row.paymentNotes ? ` · ${row.paymentNotes}` : ''}`
-                                : 'Outstanding'}
+                              : row.isProRated
+                                ? row.isPaid
+                                  ? row.moveInDate
+                                    ? `Pro-rated · Move in ${fmtDate(row.moveInDate)}${row.paymentMethod ? ` · ${row.paymentMethod}` : ''}`
+                                    : `Pro-rated · Moved out ${row.moveOutDate ? fmtDate(row.moveOutDate) : ''}${row.paymentMethod ? ` · ${row.paymentMethod}` : ''}`
+                                  : row.moveInDate
+                                    ? `Pro-rated · Move in ${fmtDate(row.moveInDate)}`
+                                    : `Pro-rated · Moved out ${row.moveOutDate ? fmtDate(row.moveOutDate) : ''}`
+                                : row.isPaid
+                                  ? `Paid${row.paymentMethod ? ` · ${row.paymentMethod}` : ''}${row.paymentNotes ? ` · ${row.paymentNotes}` : ''}`
+                                  : 'Outstanding'}
                           </p>
                         </button>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
@@ -1782,7 +2977,7 @@ export default function AdminDashboard() {
                             <>
                               <div style={{ textAlign: 'right' }}>
                                 <p style={{ fontSize: 14, fontFamily: 'Georgia, serif', color: row.isPaid ? '#4ade80' : '#fbbf24' }}>
-                                  {row.isPaid ? gbp(row.collected) : gbp(row.expected)}
+                                  {row.isProRated ? gbp(row.expected, 2) : row.isPaid ? gbp(row.collected) : gbp(row.expected)}
                                 </p>
                                 {!row.isPaid && <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>due</p>}
                               </div>
@@ -2311,6 +3506,12 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
             <input type="search" placeholder="Search by name, email or role…" value={staffSearch} onChange={(e) => setStaffSearch(e.target.value)}
               style={{ flex: 1, background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#e8edf5', outline: 'none' }} />
+            {user?.role === 'master admin' && (
+              <button type="button" onClick={openStaffInviteModal}
+                style={{ padding: '7px 14px', borderRadius: 6, background: 'rgba(167,139,250,0.12)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.3)', fontSize: 12, fontWeight: 600, flexShrink: 0, letterSpacing: '0.04em', cursor: 'pointer' }}>
+                + Invite
+              </button>
+            )}
             <button type="button" onClick={openAddStaffModal}
               style={{ padding: '7px 14px', borderRadius: 6, background: '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 12, fontWeight: 600, flexShrink: 0, letterSpacing: '0.04em' }}>
               + Add
@@ -2399,7 +3600,7 @@ export default function AdminDashboard() {
           {/* Details */}
           <div style={{ padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {[
-              ['Status', (() => { const st = (selectedProperty.status ?? 'for_let') as PropStatus; const lbl = PROP_STATUS_LABEL[st] ?? capFirst(st); return st === 'notice' && propertyTenancy?.end_date ? `${lbl} — vacating ${new Date(propertyTenancy.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : lbl })()],
+              ['Status', (() => { const st = (selectedProperty.status ?? 'for_let') as PropStatus; const lbl = PROP_STATUS_LABEL[st] ?? capFirst(st); if (st === 'notice' && selectedProperty.move_out_date) return `${lbl} — vacating ${new Date(selectedProperty.move_out_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`; if (st === 'moving_in' && selectedProperty.move_in_date) return `${lbl} — ${new Date(selectedProperty.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`; return lbl })()],
               ['Type', selectedProperty.property_type ? selectedProperty.property_type.charAt(0).toUpperCase() + selectedProperty.property_type.slice(1) : '—'],
               ['Bedrooms', selectedProperty.bedrooms != null ? String(selectedProperty.bedrooms) : '—'],
               ['Rent PCM', selectedProperty.monthly_rent != null ? `£${selectedProperty.monthly_rent.toLocaleString()}` : '—'],
@@ -2479,8 +3680,32 @@ export default function AdminDashboard() {
           {/* PRT Agreement */}
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>PRT Agreement</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>PRT Agreement</p>
+                {sentPrtStatus === 'pending' && (
+                  <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Awaiting Tenant</span>
+                )}
+                {sentPrtStatus === 'tenant_signed' && (
+                  <>
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.25)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Awaiting Admin</span>
+                    <button type="button" onClick={viewSignedPRT} style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.07)', color: '#c8d4e0', border: '1px solid rgba(255,255,255,0.12)', letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>View PDF</button>
+                  </>
+                )}
+                {sentPrtStatus === 'executed' && (
+                  <>
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Executed</span>
+                    <button type="button" onClick={viewSignedPRT} style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.25)', letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>View PDF</button>
+                  </>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 6 }}>
+                {/* Generate PRT — only when a tenant is linked */}
+                {!prtLoading && propertyTenancies.length > 0 && (
+                  <button type="button" onClick={openPRTGenerator}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)', cursor: 'pointer' }}>
+                    Generate PRT
+                  </button>
+                )}
                 {/* Upload/Replace is always available — you can register a PRT with or without a linked tenant */}
                 {!prtLoading && (
                   <button type="button" onClick={() => setShowAddPRTModal(true)}
@@ -2499,8 +3724,6 @@ export default function AdminDashboard() {
             </div>
             {prtLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>Loading…</p>
-            ) : propertyTenancies.length === 0 && !prtDoc ? (
-              <p style={{ fontSize: 12, color: '#8899aa' }}>No agreement or tenancy registered. Upload a PRT agreement or use "+ Create Tenancy" in the Tenants section above.</p>
             ) : prtDoc ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -2524,6 +3747,72 @@ export default function AdminDashboard() {
                   </label>
                 </div>
               </div>
+            ) : sentPrtStatus === 'tenant_signed' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(96,165,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#60a5fa"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Tenant signed — your signature required</p>
+                  <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Review and countersign to execute the agreement</p>
+                </div>
+                <button type="button" onClick={() => setShowAdminSignPRT(true)}
+                  style={{ fontSize: 11, color: '#4ade80', padding: '3px 10px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                  Sign Agreement
+                </button>
+              </div>
+            ) : sentPrtStatus === 'executed' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#4ade80"><path d="M9 16.2l-4.2-4.2-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Agreement fully executed</p>
+                    <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>Signed by both tenant and Aurelius Property Management</p>
+                  </div>
+                  <button type="button" onClick={viewSignedPRT}
+                    style={{ fontSize: 11, color: '#60a5fa', padding: '3px 10px', borderRadius: 5, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                    View Agreement
+                  </button>
+                </div>
+                {landlordNotifiedAt ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="#4ade80"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    <p style={{ fontSize: 11, color: '#4ade80' }}>Shared with landlord {new Date(landlordNotifiedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  </div>
+                ) : (
+                  <button type="button" disabled={landlordSharing} onClick={async () => {
+                    setLandlordSharing(true)
+                    try {
+                      const notifiedAt = new Date().toISOString()
+                      const prtExecutedNotif = {
+                        title: 'Tenancy agreement ready',
+                        body: `The signed PRT for ${selectedProperty.address} is now available in your dashboard.`,
+                      }
+                      await Promise.all([
+                        supabase.from('prt_agreements').update({ landlord_notified_at: notifiedAt }).eq('property_id', selectedProperty.id).eq('status', 'executed'),
+                        supabase.from('notifications').insert({ user_id: selectedProperty.landlord_id, type: 'prt_executed', ...prtExecutedNotif, data: { property_id: selectedProperty.id } }),
+                        supabase.functions.invoke('send-notification-email', { body: { event: 'prt_executed', data: { property_id: selectedProperty.id, agent_name: user?.full_name ?? 'Aurelius Property Management' } } }),
+                        supabase.functions.invoke('send-push', { body: { userId: selectedProperty.landlord_id, ...prtExecutedNotif, data: { type: 'prt_executed', property_id: selectedProperty.id } } }),
+                      ])
+                      setLandlordNotifiedAt(notifiedAt)
+                    } catch (err) {
+                      console.error('[SharePRT]', err)
+                    } finally {
+                      setLandlordSharing(false)
+                    }
+                  }}
+                    style={{ fontSize: 12, color: landlordSharing ? '#8899aa' : '#e8edf5', padding: '9px 14px', borderRadius: 8, background: landlordSharing ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', cursor: landlordSharing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+                    {landlordSharing ? 'Sharing…' : 'Share with Landlord'}
+                  </button>
+                )}
+              </div>
+            ) : sentPrtStatus === 'pending' ? (
+              <p style={{ fontSize: 12, color: '#fbbf24' }}>Agreement sent — awaiting tenant signature.</p>
+            ) : propertyTenancies.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#8899aa' }}>No agreement or tenancy registered. Upload a PRT agreement or use "+ Create Tenancy" in the Tenants section above.</p>
             ) : (
               <p style={{ fontSize: 12, color: '#f87171' }}>No PRT agreement registered. Use "+ Upload Agreement" to record one.</p>
             )}
@@ -2557,7 +3846,6 @@ export default function AdminDashboard() {
               { key: 'eicr', label: 'EICR (Electrical)', hint: 'Every 5 years', canMark: false },
               { key: 'epc', label: 'EPC', hint: '10-year validity — required on all adverts', canMark: false },
               { key: 'legionella', label: 'Legionella Risk Assessment', hint: 'Legally required — duty of care', canMark: false },
-              { key: 'smoke', label: 'Smoke / Heat / CO Alarms', hint: 'Confirmed via EICR or inspection', canMark: true },
             ]
             const now = new Date()
             const statuses = requiredCerts.map(cert => {
@@ -2571,17 +3859,15 @@ export default function AdminDashboard() {
               return { ...cert, status: 'valid' as const, match }
             })
             const issueStatuses = statuses.filter(s => s.status !== 'valid')
-            const smokeStatus = statuses.find(s => s.key === 'smoke')!
             const hasIssues = issueStatuses.length > 0
-            const onlySmokeMissing = issueStatuses.length === 1 && issueStatuses[0].key === 'smoke'
-            if (!hasIssues && smokeStatus.status === 'valid') return null
+            if (!hasIssues) return null
             return (
-              <div style={{ margin: '8px 16px 0', background: hasIssues && !onlySmokeMissing ? 'rgba(248,113,113,0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${hasIssues && !onlySmokeMissing ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 12, padding: '14px' }}>
-                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: hasIssues && !onlySmokeMissing ? '#f87171' : '#8899aa', marginBottom: 10 }}>
-                  Required Certifications{hasIssues && !onlySmokeMissing ? ' — Action Needed' : ' — Smoke / Heat Alarms'}
+              <div style={{ margin: '8px 16px 0', background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 12, padding: '14px' }}>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#f87171', marginBottom: 10 }}>
+                  Required Certifications — Action Needed
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {statuses.filter(s => s.status !== 'valid').map(cert => {
+                  {issueStatuses.map(cert => {
                     const color = cert.status === 'expired' ? '#f87171' : cert.status === 'expiring' ? '#fbbf24' : '#f87171'
                     const icon = cert.status === 'expired' ? '✗' : cert.status === 'expiring' ? '⚠' : '✗'
                     const label = cert.status === 'expired' ? 'Expired' : cert.status === 'expiring' ? `${(cert as { days?: number }).days}d` : 'Missing'
@@ -2592,25 +3878,12 @@ export default function AdminDashboard() {
                           <span style={{ fontSize: 12, color: '#e8edf5' }}>{cert.label}</span>
                           <span style={{ fontSize: 10, color: '#8899aa', marginLeft: 6 }}>{cert.hint}</span>
                         </div>
-                        {cert.canMark ? (
-                          <button
-                            type="button"
-                            disabled={smokeSaving}
-                            onClick={() => handleSmokeMark(true)}
-                            style={{ fontSize: 10, fontWeight: 600, color: '#4ade80', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.25)', padding: '3px 10px', borderRadius: 4, cursor: 'pointer', flexShrink: 0 }}
-                          >
-                            {smokeSaving ? '…' : 'Mark Complete'}
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{label}</span>
-                        )}
+                        <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{label}</span>
                       </div>
                     )
                   })}
                 </div>
-                {(hasIssues && !onlySmokeMissing) && (
-                  <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, lineHeight: 1.4 }}>Use "+ Add" in the Compliance Certificates section below to upload these documents.</p>
-                )}
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, lineHeight: 1.4 }}>Use "+ Add" in the Compliance Certificates section below to upload these documents.</p>
               </div>
             )
           })()}
@@ -2620,8 +3893,26 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Compliance Certificates</p>
               <div style={{ display: 'flex', gap: 6 }}>
-                {['vacant', 'for_let', 'viewings'].includes(selectedProperty?.status ?? '') && !complianceItems.some(c => c.type === 'Inventory') && (
-                  <button type="button" onClick={() => { setCompliancePresetType('Inventory'); setShowAddComplianceModal(true) }}
+                {/* Draft inventory — continue building */}
+                {(() => {
+                  const draft = complianceItems.find(c => c.type === 'Inventory' && !c.uploaded_at)
+                  if (!draft) return null
+                  return (
+                    <button type="button" onClick={() => {
+                      setInventoryBuilderItem({ id: draft.id, cleanliness_comment: draft.cleanliness_comment, odour_comment: draft.odour_comment, heat_detector_present: draft.heat_detector_present, smoke_detector_present: draft.smoke_detector_present, co_detector_present: draft.co_detector_present })
+                      setShowInventoryBuilder(true)
+                    }}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)', cursor: 'pointer' }}>
+                      Continue Building
+                    </button>
+                  )
+                })()}
+                {/* No inventory at all — create new */}
+                {!complianceItems.some(c => c.type === 'Inventory') && selectedProperty && (
+                  <button type="button" onClick={() => {
+                    setInventoryBuilderItem(null)
+                    setShowInventoryBuilder(true)
+                  }}
                     style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)', cursor: 'pointer' }}>
                     + Create Inventory
                   </button>
@@ -2682,9 +3973,16 @@ export default function AdminDashboard() {
                           </td>
                           <td style={{ padding: '11px 8px', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                              <button type="button" onClick={() => setEditComplianceItem(item)}
+                              <button type="button" onClick={() => {
+                                if (item.type === 'Inventory' && !item.uploaded_at) {
+                                  setInventoryBuilderItem({ id: item.id, cleanliness_comment: item.cleanliness_comment, odour_comment: item.odour_comment, heat_detector_present: item.heat_detector_present, smoke_detector_present: item.smoke_detector_present, co_detector_present: item.co_detector_present })
+                                  setShowInventoryBuilder(true)
+                                } else {
+                                  setEditComplianceItem(item)
+                                }
+                              }}
                                 style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(96,165,250,0.08)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                                Edit
+                                {item.type === 'Inventory' && !item.uploaded_at ? 'Open Builder' : 'Edit'}
                               </button>
                               {!item.document_url && (
                                 confirmDeleteComplianceId === item.id ? (
@@ -2915,7 +4213,38 @@ export default function AdminDashboard() {
 
           {/* Key Register */}
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '16px' }}>
-            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 14 }}>Key Register</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Key Register</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {editingKeyNumber ? (
+                  <>
+                    <input
+                      type="number"
+                      value={keyNumberDraft}
+                      onChange={e => setKeyNumberDraft(e.target.value)}
+                      placeholder="e.g. 42"
+                      autoFocus
+                      style={{ width: 70, fontSize: 12, padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#e8edf5', outline: 'none' }}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSaveKeyNumber(); if (e.key === 'Escape') setEditingKeyNumber(false) }}
+                    />
+                    <button type="button" onClick={handleSaveKeyNumber} disabled={keyNumberSaving}
+                      style={{ fontSize: 11, padding: '3px 9px', borderRadius: 5, background: '#e8edf5', color: '#0d1b2e', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                      {keyNumberSaving ? '…' : 'Save'}
+                    </button>
+                    <button type="button" onClick={() => setEditingKeyNumber(false)}
+                      style={{ fontSize: 11, padding: '3px 9px', borderRadius: 5, background: 'rgba(255,255,255,0.06)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => { setKeyNumberDraft(selectedProperty.key_number != null ? String(selectedProperty.key_number) : ''); setEditingKeyNumber(true) }}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: selectedProperty.key_number != null ? 'rgba(255,255,255,0.08)' : 'transparent', color: selectedProperty.key_number != null ? '#e8edf5' : '#8899aa', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 11 }}>#</span>
+                    {selectedProperty.key_number != null ? selectedProperty.key_number : 'Set Key No.'}
+                  </button>
+                )}
+              </div>
+            </div>
             {keysLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '12px 0' }}>Loading…</p>
             ) : (
@@ -2993,6 +4322,42 @@ export default function AdminDashboard() {
                   )
                 })}
               </div>
+            )}
+          </div>
+
+          {/* Maintenance Deductions */}
+          <div style={{ margin: '8px 16px 0', ...CARD, padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', margin: 0 }}>Maintenance Deductions</p>
+              <button type="button" onClick={() => { setDeductionType('Inventory'); setDeductionCustomTitle(''); setDeductionAmount(''); setDeductionNotes(''); setDeductionError(null); setShowAddDeductionModal(true) }}
+                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, cursor: 'pointer' }}>
+                + Add Deduction
+              </button>
+            </div>
+            {propertyDeductionsLoading ? (
+              <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>Loading…</p>
+            ) : propertyDeductions.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No queued deductions for this property</p>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {propertyDeductions.map(d => (
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(251,191,36,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24"><path d="M13.78 15.3 19.78 9.3 18.36 7.88 13.78 12.46 11.62 10.3 10.2 11.72 13.78 15.3M12 2A10 10 0 0 1 22 12A10 10 0 0 1 12 22A10 10 0 0 1 2 12A10 10 0 0 1 12 2Z"/></svg>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, color: '#e8edf5', fontFamily: 'Georgia, serif', marginBottom: 1 }}>{d.jobTitle ?? d.invoice_number}</p>
+                        <p style={{ fontSize: 11, color: '#8899aa' }}>{d.invoice_number}{d.description ? ` · ${d.description}` : ''}</p>
+                      </div>
+                      <p style={{ fontSize: 14, color: '#fbbf24', fontFamily: 'Georgia, serif', flexShrink: 0 }}>−£{Number(d.total).toFixed(2)}</p>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, textAlign: 'right' }}>
+                  Total: <span style={{ fontFamily: 'Georgia, serif', color: '#fbbf24' }}>−£{propertyDeductions.reduce((s, d) => s + d.total, 0).toFixed(2)}</span>
+                </p>
+              </>
             )}
           </div>
 
@@ -3499,12 +4864,13 @@ export default function AdminDashboard() {
           <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 6, overflowX: 'auto', alignItems: 'center' }}>
             {([
               { key: 'all',      label: 'All',      style: { background: 'rgba(255,255,255,0.06)', color: '#8899aa' } },
-              { key: 'tenanted',  label: 'Tenanted',          style: PROP_STATUS_STYLE.tenanted },
-              { key: 'notice',    label: 'Notice',            style: PROP_STATUS_STYLE.notice },
-              { key: 'viewings',  label: 'Viewings',          style: PROP_STATUS_STYLE.viewings },
-              { key: 'vacant',    label: 'Vacant',            style: PROP_STATUS_STYLE.vacant },
-              { key: 'for_let',   label: 'For Let',           style: PROP_STATUS_STYLE.for_let },
-              { key: 'listed',    label: 'Has Listing',       style: { background: 'rgba(74,222,128,0.12)', color: '#4ade80' } },
+              { key: 'tenanted',  label: 'Tenanted',   style: PROP_STATUS_STYLE.tenanted },
+              { key: 'moving_in', label: 'Moving In',  style: PROP_STATUS_STYLE.moving_in },
+              { key: 'notice',    label: 'Notice',     style: PROP_STATUS_STYLE.notice },
+              { key: 'viewings',  label: 'Viewings',   style: PROP_STATUS_STYLE.viewings },
+              { key: 'vacant',    label: 'Vacant',     style: PROP_STATUS_STYLE.vacant },
+              { key: 'for_let',   label: 'For Let',    style: PROP_STATUS_STYLE.for_let },
+              { key: 'listed',    label: 'Has Listing',style: { background: 'rgba(74,222,128,0.12)', color: '#4ade80' } },
             ] as { key: PropStatus | 'all' | 'listed'; label: string; style: React.CSSProperties }[]).map(({ key, label, style }) => {
               const isActive = propStatusFilter === key
               const count = key === 'all' ? null : key === 'listed' ? adminProps.filter(p => p.is_listed).length : key === 'tenanted' ? adminProps.filter(p => p.status === 'tenanted' || p.status === 'active').length : adminProps.filter(p => p.status === key).length
@@ -3552,7 +4918,7 @@ export default function AdminDashboard() {
             ) : filteredAdminProps.length === 0 ? (
               <EmptyState icon={<IconHouse />} title={propSearch || propStatusFilter !== 'all' ? 'No results' : 'No properties'} subtitle={propSearch || propStatusFilter !== 'all' ? 'Try a different search term or filter' : 'Properties will appear here once added'} />
             ) : (
-              filteredAdminProps.map((p) => <AdminPropertyCard key={p.id} property={p} onLinkTenant={openLinkTenantModal} onEdit={openEditPropertyModal} onView={setSelectedProperty} onToggleListing={quickToggleListing} />)
+              filteredAdminProps.map((p) => <AdminPropertyCard key={p.id} property={p} pendingNotice={tenancyNotices.find(n => n.property_id === p.id) ?? null} onLinkTenant={openLinkTenantModal} onEdit={openEditPropertyModal} onView={setSelectedProperty} onToggleListing={quickToggleListing} />)
             )}
           </div>
         </div>
@@ -3567,7 +4933,7 @@ export default function AdminDashboard() {
                 { key: 'all', label: 'All' },
                 { key: 'open', label: 'Open' },
                 { key: 'in_progress', label: 'In Progress' },
-                { key: 'resolved', label: 'Resolved' },
+                { key: 'resolved', label: 'Paid' },
                 { key: 'compliance', label: 'Compliance' },
                 { key: 'viewings', label: 'Viewings' },
               ] as { key: MaintenanceFilter; label: string }[]).map(({ key, label }) => (
@@ -3774,6 +5140,8 @@ export default function AdminDashboard() {
                   })()
                   const actionLabel = (log.action ?? '').replace(/_/g, ' ')
                   const hasMetadata = !!(log.user_id || log.user_role)
+                  const metaAddress = typeof log.metadata?.address === 'string' ? log.metadata.address : null
+                  const metaAmount = typeof log.metadata?.amount === 'number' ? log.metadata.amount : null
                   return (
                     <div key={log.id}>
                       <div
@@ -3796,6 +5164,16 @@ export default function AdminDashboard() {
                               </span>
                             )}
                           </div>
+                          {(metaAddress || metaAmount !== null) && (
+                            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              {metaAddress && (
+                                <span style={{ fontSize: 11, color: '#8899aa' }}>{metaAddress}</span>
+                              )}
+                              {metaAmount !== null && (
+                                <span style={{ fontSize: 11, color: '#4ade80' }}>£{metaAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              )}
+                            </div>
+                          )}
                           {isExpanded && (
                             <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {(log.user_name || log.user_email) && (
@@ -3868,6 +5246,77 @@ export default function AdminDashboard() {
         />
       )}
 
+      {showStaffInviteModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowStaffInviteModal(false) }}>
+          <div style={{ background: '#0d1b2e', borderRadius: '16px 16px 0 0', padding: '24px 20px 36px', width: '100%', maxWidth: 480, border: '1px solid rgba(255,255,255,0.1)', borderBottom: 'none' }}>
+            {staffInviteSuccess ? (
+              <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 22 }}>✓</div>
+                <p style={{ fontSize: 17, fontFamily: 'Georgia, serif', color: '#e8edf5', marginBottom: 8 }}>Invite sent</p>
+                <p style={{ fontSize: 13, color: '#8899aa', lineHeight: 1.5, marginBottom: 24 }}>
+                  A secure invite link has been emailed to <strong style={{ color: '#e8edf5' }}>{staffInviteEmail}</strong>.<br />
+                  The link expires in 24 hours and can only be used once.
+                </p>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button type="button" onClick={openStaffInviteModal}
+                    style={{ flex: 1, padding: '13px 0', borderRadius: 10, background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Invite another
+                  </button>
+                  <button type="button" onClick={() => setShowStaffInviteModal(false)}
+                    style={{ flex: 1, padding: '13px 0', borderRadius: 10, background: '#e8edf5', border: 'none', color: '#0d1b2e', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: 17, fontFamily: 'Georgia, serif', color: '#e8edf5', marginBottom: 4 }}>Invite staff member</p>
+                <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 20 }}>A secure, single-use link will be emailed. It expires in 24 hours.</p>
+
+                <p style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Role</p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                  {(['admin', 'master admin'] as const).map((r) => (
+                    <button key={r} type="button" onClick={() => setStaffInviteRole(r)}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `1px solid ${staffInviteRole === r ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.1)'}`, background: staffInviteRole === r ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)', color: staffInviteRole === r ? '#a78bfa' : '#8899aa', fontSize: 12, fontWeight: staffInviteRole === r ? 600 : 400, cursor: 'pointer', textTransform: 'capitalize', letterSpacing: '0.03em' }}>
+                      {r === 'master admin' ? 'Master Admin' : 'Admin'}
+                    </button>
+                  ))}
+                </div>
+
+                <p style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Email</p>
+                <input type="email" autoComplete="off" placeholder="name@example.com"
+                  value={staffInviteEmail}
+                  onChange={e => setStaffInviteEmail(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSendStaffInvite()}
+                  style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#e8edf5', outline: 'none', marginBottom: 14, boxSizing: 'border-box' }} />
+
+                <p style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Name (optional)</p>
+                <input type="text" placeholder="Full name"
+                  value={staffInviteName}
+                  onChange={e => setStaffInviteName(e.target.value)}
+                  style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#e8edf5', outline: 'none', marginBottom: 18, boxSizing: 'border-box' }} />
+
+                {staffInviteError && (
+                  <p style={{ fontSize: 12, color: '#f87171', marginBottom: 14, background: 'rgba(248,113,113,0.08)', padding: '10px 12px', borderRadius: 8 }}>{staffInviteError}</p>
+                )}
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button type="button" onClick={() => setShowStaffInviteModal(false)}
+                    style={{ flex: 1, padding: '13px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleSendStaffInvite} disabled={staffInviteSaving || !staffInviteEmail.trim()}
+                    style={{ flex: 2, padding: '13px 0', borderRadius: 10, background: !staffInviteEmail.trim() ? 'rgba(232,237,245,0.2)' : staffInviteSaving ? 'rgba(232,237,245,0.5)' : '#e8edf5', border: 'none', color: !staffInviteEmail.trim() ? 'rgba(13,27,46,0.4)' : '#0d1b2e', fontSize: 13, fontWeight: 600, cursor: (staffInviteSaving || !staffInviteEmail.trim()) ? 'not-allowed' : 'pointer' }}>
+                    {staffInviteSaving ? 'Sending…' : 'Send invite'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {editProperty && (
         <EditPropertyModal
           property={editProperty}
@@ -3884,6 +5333,126 @@ export default function AdminDashboard() {
         />
       )}
 
+      {showPRTGenerator && selectedProperty && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 200, overflowY: 'auto', padding: '24px 16px' }}>
+          <div style={{ background: '#112240', borderRadius: 16, width: '100%', maxWidth: 520, padding: 24, marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <p style={{ fontSize: 15, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Generate PRT Agreement</p>
+              <button type="button" onClick={() => setShowPRTGenerator(false)}
+                style={{ background: 'none', border: 'none', color: '#8899aa', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+            </div>
+            <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 18, lineHeight: 1.5 }}>
+              Review and complete the details below. The generated document will open in a new tab — use your browser's Print / Save as PDF to save it.
+            </p>
+
+            {/* Tenant details */}
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Tenant Details</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Full name</label>
+                <input value={prtForm.tenantName} onChange={e => setPrtForm(f => ({ ...f, tenantName: e.target.value }))}
+                  placeholder="e.g. Mr John Smith"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Previous address (before moving in)</label>
+                <textarea value={prtForm.tenantAddress} onChange={e => setPrtForm(f => ({ ...f, tenantAddress: e.target.value }))}
+                  placeholder="e.g. 12 High Street, Dundee, DD1 1AA"
+                  rows={2}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none', resize: 'vertical' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Email</label>
+                  <input value={prtForm.tenantEmail} onChange={e => setPrtForm(f => ({ ...f, tenantEmail: e.target.value }))}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Phone number</label>
+                  <input value={prtForm.tenantPhone} onChange={e => setPrtForm(f => ({ ...f, tenantPhone: e.target.value }))}
+                    placeholder="e.g. 07700 900000"
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Tenancy details */}
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Tenancy Details</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Start date</label>
+                <input type="date" value={prtForm.startDate} onChange={e => {
+                  const d = new Date(e.target.value)
+                  const day = d.getDate()
+                  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                  const rent = parseFloat(prtForm.monthlyRent) || 0
+                  const first = day > 1 ? Math.round(((daysInMonth - day + 1) / daysInMonth) * rent * 100) / 100 : rent
+                  setPrtForm(f => ({ ...f, startDate: e.target.value, firstPayment: String(first) }))
+                }}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Monthly rent (£)</label>
+                <input type="number" value={prtForm.monthlyRent} onChange={e => {
+                  const rent = parseFloat(e.target.value) || 0
+                  const d = prtForm.startDate ? new Date(prtForm.startDate) : null
+                  const day = d ? d.getDate() : 1
+                  const daysInMonth = d ? new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() : 30
+                  const first = day > 1 ? Math.round(((daysInMonth - day + 1) / daysInMonth) * rent * 100) / 100 : rent
+                  setPrtForm(f => ({ ...f, monthlyRent: e.target.value, firstPayment: String(first) }))
+                }}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>First payment (£)
+                  <span style={{ color: '#4ade80', marginLeft: 4, fontSize: 10 }}>auto-calculated</span>
+                </label>
+                <input type="number" value={prtForm.firstPayment} onChange={e => setPrtForm(f => ({ ...f, firstPayment: e.target.value }))}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Deposit (£)</label>
+                <input type="number" value={prtForm.depositAmount} onChange={e => setPrtForm(f => ({ ...f, depositAmount: e.target.value }))}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+            </div>
+
+            {/* Landlord details */}
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Landlord Details</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Landlord name</label>
+                <input value={prtForm.landlordName} onChange={e => setPrtForm(f => ({ ...f, landlordName: e.target.value }))}
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#8899aa', display: 'block', marginBottom: 4 }}>Landlord registration number</label>
+                <input value={prtForm.landlordReg} onChange={e => setPrtForm(f => ({ ...f, landlordReg: e.target.value }))}
+                  placeholder="e.g. 1234567/180/12345"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '8px 10px', color: '#e8edf5', fontSize: 13, outline: 'none' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => setShowPRTGenerator(false)}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 8, background: 'rgba(255,255,255,0.06)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.1)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={generatePRTDocument}
+                disabled={!prtForm.tenantName || !prtForm.startDate}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 8, background: 'rgba(255,255,255,0.06)', color: (!prtForm.tenantName || !prtForm.startDate) ? '#8899aa' : '#e8edf5', border: '1px solid rgba(255,255,255,0.1)', fontSize: 13, fontWeight: 500, cursor: (!prtForm.tenantName || !prtForm.startDate) ? 'not-allowed' : 'pointer' }}>
+                Preview
+              </button>
+              <button type="button" onClick={sendPRTToTenant}
+                disabled={!prtForm.tenantName || !prtForm.startDate || prtSending}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 8, background: (!prtForm.tenantName || !prtForm.startDate || prtSending) ? 'rgba(74,222,128,0.2)' : '#4ade80', color: (!prtForm.tenantName || !prtForm.startDate || prtSending) ? '#4ade8088' : '#0a1628', border: 'none', fontSize: 13, fontWeight: 600, cursor: (!prtForm.tenantName || !prtForm.startDate || prtSending) ? 'not-allowed' : 'pointer' }}>
+                {prtSending ? 'Sending…' : 'Send to Tenant'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddPRTModal && selectedProperty && (
         <AddPRTModal
           property={selectedProperty}
@@ -3897,6 +5466,129 @@ export default function AdminDashboard() {
               setAdminProps(prev => prev.map(p => p.id === selectedProperty.id ? updated : p))
             }
             setAnalyticsLoaded(false)
+          }}
+        />
+      )}
+
+      {showAdminSignPRT && selectedProperty && (
+        <AdminPRTSignModal
+          propertyId={selectedProperty.id}
+          sigCanvasRef={adminSigCanvasRef}
+          sigDrawing={adminSigDrawing}
+          sigHasStroke={adminSigHasStroke}
+          sigTypedName={adminSigTypedName}
+          setSigTypedName={setAdminSigTypedName}
+          sigSubmitting={adminSigSubmitting}
+          sigError={adminSigError}
+          onClose={() => { setShowAdminSignPRT(false); setAdminSigError(null) }}
+          onSign={async () => {
+            if (!adminSigTypedName.trim()) { setAdminSigError('Please enter your full name.'); return }
+            if (!adminSigHasStroke.current) { setAdminSigError('Please draw your signature.'); return }
+            setAdminSigSubmitting(true)
+            setAdminSigError(null)
+            try {
+              const adminSignedAt = new Date()
+              // Fetch HTML and row metadata in parallel
+              const [{ data: htmlData }, { data: prtRows }] = await Promise.all([
+                supabase.rpc('get_property_prt_html', { p_property_id: selectedProperty.id }),
+                supabase.rpc('get_property_prt', { p_property_id: selectedProperty.id }),
+              ])
+              const currentHtml = (htmlData as string | null) ?? sentPrtHtml
+              if (!currentHtml) throw new Error('Could not load agreement')
+              const prtRow = Array.isArray(prtRows) && prtRows.length > 0 ? prtRows[0] as { sent_at: string; signed_at: string | null; signature_name: string | null } : null
+              const canvas = adminSigCanvasRef.current
+              const signatureData = canvas ? canvas.toDataURL('image/png') : null
+              const signedDate = adminSignedAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+              const fmt = (iso: string | null) => iso
+                ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' }) + ' (GMT)'
+                : '—'
+              let signedHtml = currentHtml
+              signedHtml = signedHtml.replace(
+                '<p id="admin-sig-line" style="margin-top: 30pt; border-bottom: 1px solid #000; width: 80%;">&nbsp;</p>',
+                signatureData
+                  ? `<img src="${signatureData}" alt="Admin Signature" style="max-width:260px;height:auto;display:block;margin-top:8pt;margin-bottom:4pt;" />`
+                  : `<p style="margin-top:30pt;font-style:italic;">${adminSigTypedName.trim()}</p>`
+              )
+              signedHtml = signedHtml.replace(
+                '<p id="admin-date-line" style="margin-top: 20pt; border-bottom: 1px solid #000; width: 80%;">&nbsp;</p>',
+                `<p style="margin-top:8pt;font-size:11pt;font-weight:bold;">${signedDate}</p>`
+              )
+              const receiptHtml = `
+<div id="prt-audit-receipt" style="margin-top:40pt;padding:16pt;background:#f7f8fa;border:1px solid #d0d5dd;border-radius:4pt;page-break-inside:avoid;">
+  <p style="font-size:9pt;font-weight:bold;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:12pt;">Electronic Execution Audit Record</p>
+  <table style="width:100%;font-size:8.5pt;border-collapse:collapse;">
+    <tr style="background:#e8edf5;">
+      <th style="padding:5pt 8pt;border:1px solid #c8d0dc;text-align:left;font-weight:bold;">Action</th>
+      <th style="padding:5pt 8pt;border:1px solid #c8d0dc;text-align:left;font-weight:bold;">Party</th>
+      <th style="padding:5pt 8pt;border:1px solid #c8d0dc;text-align:left;font-weight:bold;">Name</th>
+      <th style="padding:5pt 8pt;border:1px solid #c8d0dc;text-align:left;font-weight:bold;">Timestamp</th>
+    </tr>
+    <tr>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">Agreement prepared &amp; sent</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">Letting Agent</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">${adminSigTypedName.trim()}</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">${fmt(prtRow?.sent_at ?? null)}</td>
+    </tr>
+    <tr style="background:#fafafa;">
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">Tenant signature</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">Tenant</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">${prtRow?.signature_name ?? '—'}</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">${fmt(prtRow?.signed_at ?? null)}</td>
+    </tr>
+    <tr>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">Agent countersignature</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">Letting Agent</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">${adminSigTypedName.trim()}</td>
+      <td style="padding:5pt 8pt;border:1px solid #c8d0dc;">${fmt(adminSignedAt.toISOString())}</td>
+    </tr>
+  </table>
+  <p style="font-size:7.5pt;color:#666;margin-top:10pt;line-height:1.5;">This audit record is maintained by Aurelius Property Management as part of the tenancy execution trail. All timestamps are recorded in GMT and are accurate to the minute. This record may be produced as evidence of electronic execution under the Electronic Communications Act 2000.</p>
+</div>`
+              signedHtml = signedHtml.replace('<div id="prt-audit-receipt"></div>', receiptHtml)
+              const { error } = await supabase
+                .from('prt_agreements')
+                .update({ status: 'executed', admin_signed_at: adminSignedAt.toISOString(), admin_signature_data: signatureData, admin_signature_name: adminSigTypedName.trim(), document_html: signedHtml })
+                .eq('property_id', selectedProperty.id)
+                .eq('status', 'tenant_signed')
+              if (error) throw error
+              setSentPrtStatus('executed')
+              setSentPrtHtml(signedHtml)
+              setShowAdminSignPRT(false)
+              setAdminSigTypedName('')
+              adminSigHasStroke.current = false
+            } catch (err) {
+              console.error('[AdminPRTSign]', err)
+              setAdminSigError('Failed to save signature. Please try again.')
+            } finally {
+              setAdminSigSubmitting(false)
+            }
+          }}
+        />
+      )}
+
+      {showInventoryBuilder && selectedProperty && (
+        <InventoryBuilderModal
+          propertyId={selectedProperty.id}
+          propertyAddress={selectedProperty.address}
+          existingItem={inventoryBuilderItem}
+          onClose={() => { setShowInventoryBuilder(false); setInventoryBuilderItem(null) }}
+          onDraftCreated={(itemId) => {
+            const today = new Date().toISOString().slice(0, 10)
+            setComplianceItems(prev => [...prev, {
+              id: itemId, property_id: selectedProperty.id, type: 'Inventory',
+              issue_date: today, expiry_date: null, status: null,
+              document_url: null, notes: null, uploaded_at: null,
+            }])
+          }}
+          onFinalised={(itemId, pdfUrl) => {
+            const now = new Date().toISOString()
+            setComplianceItems(prev => prev.map(c =>
+              c.id === itemId
+                ? { ...c, pdf_url: pdfUrl, document_url: pdfUrl, uploaded_at: now }
+                : c
+            ))
+            setShowInventoryBuilder(false)
+            setInventoryBuilderItem(null)
           }}
         />
       )}
@@ -3983,6 +5675,47 @@ export default function AdminDashboard() {
           />
         ) : null
       })()}
+
+      {/* ── Add Manual Deduction Modal ── */}
+      {showAddDeductionModal && selectedProperty && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+          <div style={{ background: '#112240', borderRadius: '20px 20px 0 0', padding: '24px 20px 36px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Add Deduction</p>
+              <button type="button" onClick={() => setShowAddDeductionModal(false)}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, width: 32, height: 32, color: '#8899aa', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+            {/* Type chips */}
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Type</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              {(['Inventory', 'Legionella', 'General Maintenance', 'Custom'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setDeductionType(t)}
+                  style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, fontWeight: deductionType === t ? 600 : 400, background: deductionType === t ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)', border: deductionType === t ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.07)', color: deductionType === t ? '#e8edf5' : '#8899aa', cursor: 'pointer' }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            {deductionType === 'Custom' && (
+              <>
+                <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Title</p>
+                <input value={deductionCustomTitle} onChange={e => setDeductionCustomTitle(e.target.value)} placeholder="Deduction title"
+                  style={{ width: '100%', fontSize: 14, padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', outline: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
+              </>
+            )}
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Amount (£)</p>
+            <input type="number" min="0" step="0.01" value={deductionAmount} onChange={e => setDeductionAmount(e.target.value)} placeholder="0.00"
+              style={{ width: '100%', fontSize: 16, fontFamily: 'Georgia, serif', padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', outline: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 6 }}>Notes (optional)</p>
+            <textarea value={deductionNotes} onChange={e => setDeductionNotes(e.target.value)} placeholder="e.g. Annual inventory check completed" rows={3}
+              style={{ width: '100%', fontSize: 13, padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#e8edf5', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }} />
+            {deductionError && <p style={{ fontSize: 12, color: '#f87171', marginBottom: 12 }}>{deductionError}</p>}
+            <button type="button" onClick={handleSaveManualDeduction} disabled={deductionSaving || !deductionAmount || (deductionType === 'Custom' && !deductionCustomTitle.trim())}
+              style={{ width: '100%', padding: '13px', borderRadius: 10, background: deductionSaving ? 'rgba(255,255,255,0.1)' : '#fbbf24', color: '#0d1b2e', fontSize: 14, fontWeight: 700, border: 'none', cursor: deductionSaving ? 'default' : 'pointer' }}>
+              {deductionSaving ? 'Saving…' : 'Save Deduction'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Add Metre Reading Modal ── */}
       {showAddMeterModal && (
@@ -4822,11 +6555,17 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
   onDelete: (userId: string) => void
 }) {
   const [landlordProps, setLandlordProps] = useState<AdminPropRow[]>([])
-  const [tenancy, setTenancy] = useState<{ id: string; address: string; monthly_rent: number | null; start_date: string; end_date: string | null } | null>(null)
+  const [tenancy, setTenancy] = useState<{ id: string; propertyId: string; address: string; monthly_rent: number | null; start_date: string; end_date: string | null } | null>(null)
+  const [tenancyProp, setTenancyProp] = useState<AdminPropRow | null>(null)
   const [contractorJobs, setContractorJobs] = useState<MaintenanceRow[]>([])
   const [selectedContractorJob, setSelectedContractorJob] = useState<MaintenanceRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [localStatus, setLocalStatus] = useState(user.status)
+  const [localFee, setLocalFee] = useState<number | null>(user.management_fee_percent ?? null)
+  const [feeInput, setFeeInput] = useState(user.management_fee_percent != null ? String(user.management_fee_percent) : '')
+  const [editingFee, setEditingFee] = useState(false)
+  const [feeSaving, setFeeSaving] = useState(false)
+  const [feeError, setFeeError] = useState<string | null>(null)
   const [confirmSuspend, setConfirmSuspend] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -4895,13 +6634,21 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
       } else if (user.role === 'tenant') {
         const { data } = await supabase
           .from('tenancies')
-          .select('id, monthly_rent, start_date, end_date, properties(address)')
+          .select('id, monthly_rent, start_date, end_date, property_id, properties(address)')
           .eq('tenant_id', user.id)
           .eq('is_current', true)
           .maybeSingle()
         if (data) {
-          const raw = data as unknown as { id: string; monthly_rent: number | null; start_date: string; end_date: string | null; properties: { address: string } | null }
-          setTenancy({ id: raw.id, address: raw.properties?.address ?? '', monthly_rent: raw.monthly_rent, start_date: raw.start_date, end_date: raw.end_date })
+          const raw = data as unknown as { id: string; monthly_rent: number | null; start_date: string; end_date: string | null; property_id: string; properties: { address: string } | null }
+          setTenancy({ id: raw.id, propertyId: raw.property_id, address: raw.properties?.address ?? '', monthly_rent: raw.monthly_rent, start_date: raw.start_date, end_date: raw.end_date })
+          if (raw.property_id) {
+            const { data: propData } = await supabase
+              .from('properties')
+              .select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, move_in_date, move_out_date, profiles(full_name, email)')
+              .eq('id', raw.property_id)
+              .maybeSingle()
+            if (propData) setTenancyProp(propData as unknown as AdminPropRow)
+          }
         }
       } else if (user.role === 'contractor') {
         const { data: contractorRow } = await supabase
@@ -4925,6 +6672,21 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
 
   const rb = badge(user.role, 'role')
   const isSuspended = localStatus === 'suspended'
+
+  async function handleViewTenancyProperty() {
+    if (!tenancy) return
+    if (tenancyProp) { onViewProperty(tenancyProp); return }
+    const { data } = await supabase
+      .from('properties')
+      .select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, move_in_date, move_out_date, profiles(full_name, email)')
+      .eq('id', tenancy.propertyId)
+      .maybeSingle()
+    if (data) {
+      const prop = data as unknown as AdminPropRow
+      setTenancyProp(prop)
+      onViewProperty(prop)
+    }
+  }
 
   async function handleReinstate() {
     setStatusUpdating(true)
@@ -4961,6 +6723,22 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
     setPasswordSuccess(true)
     setNewPassword('')
     setTimeout(() => { setShowSetPassword(false); setPasswordSuccess(false) }, 1500)
+  }
+
+  async function handleSaveFee(e: React.FormEvent) {
+    e.preventDefault()
+    setFeeError(null)
+    const parsed = feeInput.trim() === '' ? null : parseFloat(feeInput)
+    if (feeInput.trim() !== '' && (isNaN(parsed!) || parsed! < 0 || parsed! > 100)) {
+      setFeeError('Enter a value between 0 and 100')
+      return
+    }
+    setFeeSaving(true)
+    const { error } = await supabase.from('users').update({ management_fee_percent: parsed }).eq('id', user.id)
+    setFeeSaving(false)
+    if (error) { setFeeError('Failed to save'); return }
+    setLocalFee(parsed)
+    setEditingFee(false)
   }
 
   if (selectedContractorJob) {
@@ -5094,6 +6872,58 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
           <div style={{ ...CARD, height: 120, opacity: 0.4 }} className="animate-pulse" />
         ) : user.role === 'landlord' ? (
           <>
+          {/* Management fee */}
+          <div style={{ ...CARD, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa' }}>Management Fee</p>
+              {!editingFee && (
+                <button type="button" onClick={() => { setFeeInput(localFee != null ? String(localFee) : ''); setFeeError(null); setEditingFee(true) }}
+                  style={{ fontSize: 11, color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.05em' }}>
+                  Edit
+                </button>
+              )}
+            </div>
+            {editingFee ? (
+              <form onSubmit={handleSaveFee} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="number" min="0" max="100" step="0.1"
+                    value={feeInput}
+                    onChange={e => setFeeInput(e.target.value)}
+                    placeholder="e.g. 8"
+                    autoFocus
+                    style={{ ...INPUT_STYLE, flex: 1, fontSize: 14 }}
+                  />
+                  <span style={{ fontSize: 14, color: '#8899aa', flexShrink: 0 }}>%</span>
+                </div>
+                <p style={{ fontSize: 11, color: '#8899aa' }}>This rate will be applied as the management fee deducted via Stripe.</p>
+                {feeError && <p style={{ fontSize: 11, color: '#f87171' }}>{feeError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => setEditingFee(false)}
+                    style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', fontSize: 13 }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={feeSaving}
+                    style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', color: '#60a5fa', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                    {feeSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <p style={{ fontSize: 28, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>
+                  {localFee != null ? `${localFee}%` : '—'}
+                </p>
+                {localFee != null && (
+                  <p style={{ fontSize: 11, color: '#8899aa' }}>deducted per payment via Stripe</p>
+                )}
+              </div>
+            )}
+            {localFee == null && !editingFee && (
+              <p style={{ fontSize: 12, color: '#8899aa', marginTop: 4 }}>No fee set — tap Edit to configure</p>
+            )}
+          </div>
+
           <div>
             <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 10 }}>
               Properties ({landlordProps.length})
@@ -5245,8 +7075,16 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
             {!tenancy ? (
               <EmptyState icon={<IconHouse />} title="No active tenancy" subtitle="This tenant has not been linked to a property" />
             ) : (
-              <div style={{ ...CARD, padding: 16 }}>
-                <p style={{ fontSize: 15, color: '#e8edf5', fontFamily: 'Georgia, serif', marginBottom: 8 }}>{tenancy.address}</p>
+              <button
+                type="button"
+                onClick={handleViewTenancyProperty}
+                style={{ ...CARD, padding: 16, textAlign: 'left', width: '100%', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.07)' }}
+                className="active:opacity-60"
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                  <p style={{ fontSize: 15, color: '#e8edf5', fontFamily: 'Georgia, serif', flex: 1, minWidth: 0 }} className="truncate">{tenancy.address}</p>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#8899aa" style={{ flexShrink: 0, marginTop: 2 }}><path d="M9.29 6.71a.996.996 0 0 0 0 1.41L13.17 12l-3.88 3.88a.996.996 0 1 0 1.41 1.41l4.59-4.59a.996.996 0 0 0 0-1.41L10.7 6.7c-.38-.38-1.02-.38-1.41.01z"/></svg>
+                </div>
                 {tenancy.monthly_rent != null && (
                   <p style={{ fontSize: 22, color: '#e8edf5', fontFamily: 'Georgia, serif', fontWeight: 300, marginBottom: 8 }}>{gbp(tenancy.monthly_rent)}<span style={{ fontSize: 12, color: '#8899aa' }}>/mo</span></p>
                 )}
@@ -5254,7 +7092,7 @@ function UserDetailPanel({ user, onBack, onViewProperty, onStatusChange, onDelet
                   <span>From {fmtDate(tenancy.start_date)}</span>
                   {tenancy.end_date ? <span>To {fmtDate(tenancy.end_date)}</span> : <span>Ongoing</span>}
                 </div>
-              </div>
+              </button>
             )}
           </div>
         ) : user.role === 'contractor' ? (
@@ -5312,7 +7150,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
   onUpdate?: (id: string, updates: Partial<MaintenanceRow>) => void
 }) {
   type HistEntry = { id: string; old_status: string | null; new_status: string | null; notes: string | null; created_at: string }
-  type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null; compliance_template_url: string | null; scheduled_at: string | null }
+  type FullRequest = { tenant_id: string | null; tenancy_id: string | null; assigned_contractor_id: string | null; updated_at: string | null; resolved_at: string | null; photo_urls: string[] | null; completion_photo_urls: string[] | null; completion_document_url: string | null; request_type: string | null; cost: number | null; compliance_template_url: string | null; scheduled_at: string | null; tenant_home_at_scheduled: boolean | null; tenant_keys_ok: boolean | null; tenant_alt_datetime: string | null }
   type ContractorOption = { id: string; business_name: string | null; full_name: string | null; email: string }
   type InvoiceRow = { id: string; invoice_number: string; total: number; status: string; description: string | null; created_at: string; deduction_queued: boolean }
   type CommentRow = { id: string; author_id: string | null; author_name: string | null; body: string; created_at: string }
@@ -5367,7 +7205,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
     async function load() {
       const [reqRes, histRes, invRes, commRes] = await Promise.all([
         supabase.from('maintenance_requests')
-          .select('tenant_id, tenancy_id, assigned_contractor_id, updated_at, resolved_at, photo_urls, completion_photo_urls, completion_document_url, request_type, cost, compliance_template_url, scheduled_at')
+          .select('tenant_id, tenancy_id, assigned_contractor_id, updated_at, resolved_at, photo_urls, completion_photo_urls, completion_document_url, request_type, cost, compliance_template_url, scheduled_at, tenant_home_at_scheduled, tenant_keys_ok, tenant_alt_datetime')
           .eq('id', request.id).maybeSingle(),
         supabase.from('maintenance_status_history')
           .select('id, old_status, new_status, notes, created_at')
@@ -5453,6 +7291,21 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
     load()
   }, [request.id])
 
+  useEffect(() => {
+    const channel = supabase
+      .channel(`admin-invoices-${request.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'contractor_invoices', filter: `maintenance_request_id=eq.${request.id}` },
+        (payload) => {
+          const inv = payload.new as InvoiceRow
+          setInvoices(prev => prev.some(i => i.id === inv.id) ? prev : [...prev, inv])
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [request.id])
+
   async function openAssignSheet() {
     setShowAssignSheet(true)
     if (contractors.length > 0) return
@@ -5500,12 +7353,6 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
         setActionError('Failed to pick up — request could not be updated.')
         return
       }
-      await supabase.from('maintenance_status_history').insert({
-        maintenance_request_id: request.id,
-        old_status: localStatus,
-        new_status: newStatus,
-        notes: 'Picked up by admin',
-      })
       const newEntry: HistEntry = { id: crypto.randomUUID(), old_status: localStatus, new_status: newStatus, notes: 'Picked up by admin', created_at: now }
       setHistory(prev => [...prev, newEntry])
       setLocalStatus(newStatus)
@@ -5534,12 +7381,6 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
         setActionError('Failed to accept — request could not be updated.')
         return
       }
-      await supabase.from('maintenance_status_history').insert({
-        maintenance_request_id: request.id,
-        old_status: localStatus,
-        new_status: newStatus,
-        notes: 'Work accepted by admin',
-      })
       const newEntry: HistEntry = { id: crypto.randomUUID(), old_status: localStatus, new_status: newStatus, notes: 'Work accepted by admin', created_at: now }
       setHistory(prev => [...prev, newEntry])
       setLocalStatus(newStatus)
@@ -5580,12 +7421,6 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
         setActionError('Failed to send back — request could not be updated.')
         return
       }
-      await supabase.from('maintenance_status_history').insert({
-        maintenance_request_id: request.id,
-        old_status: localStatus,
-        new_status: newStatus,
-        notes: 'Work sent back by admin',
-      })
       const newEntry: HistEntry = { id: crypto.randomUUID(), old_status: localStatus, new_status: newStatus, notes: 'Work sent back by admin', created_at: now }
       setHistory(prev => [...prev, newEntry])
       setLocalStatus(newStatus)
@@ -5797,12 +7632,6 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
         setShowAssignSheet(false)
         return
       }
-      await supabase.from('maintenance_status_history').insert({
-        maintenance_request_id: request.id,
-        old_status: localStatus,
-        new_status: newStatus,
-        notes: `Assigned to ${displayName}`,
-      })
       const newEntry: HistEntry = { id: crypto.randomUUID(), old_status: localStatus, new_status: newStatus, notes: `Assigned to ${displayName}`, created_at: now }
       setHistory(prev => [...prev, newEntry])
       setLocalStatus(newStatus)
@@ -5819,7 +7648,7 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
     }
   }
 
-  const STATUS_LABEL: Record<string, string> = { open: 'Open', assigned: 'Assigned', in_progress: 'In Progress', pending_review: 'Pending Review', resolved: 'Resolved', closed: 'Closed' }
+  const STATUS_LABEL: Record<string, string> = { open: 'Open', assigned: 'Assigned', in_progress: 'In Progress', pending_review: 'Pending Review', resolved: 'Paid', closed: 'Closed' }
   const sb = badge(localStatus)
   const pb = badge(request.priority, 'priority')
   const isResolved = localStatus === 'resolved' || localStatus === 'closed'
@@ -5944,8 +7773,9 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
 
       <div className="px-4 py-5 flex flex-col gap-4">
         {/* Summary card */}
-        <div style={{ ...CARD, padding: 16 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: request.description ? 12 : 0 }}>
+        <div style={{ ...CARD, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Status / priority badges */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, letterSpacing: '0.08em', textTransform: 'uppercase', ...sb }}>
               {STATUS_LABEL[localStatus] ?? localStatus}
             </span>
@@ -5955,12 +7785,35 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
               </span>
             )}
           </div>
-          {request.description && <p style={{ fontSize: 13, color: '#8899aa', lineHeight: 1.5 }}>{request.description}</p>}
+          {/* Title */}
+          <p style={{ fontSize: 16, fontWeight: 600, color: '#e8edf5', fontFamily: 'Georgia, serif', lineHeight: 1.3 }}>
+            {request.title ?? 'Untitled'}
+          </p>
+          {/* Description */}
+          {request.description && (
+            <p style={{ fontSize: 13, color: '#c8d4e0', lineHeight: 1.55 }}>{request.description}</p>
+          )}
+          {/* Address */}
           {propertyAddress && (
-            <p style={{ fontSize: 12, color: '#8899aa', marginTop: request.description ? 8 : 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              {propertyAddress}
-            </p>
+            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(propertyAddress)}`} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="#60a5fa" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              <p style={{ fontSize: 13, color: '#60a5fa' }}>{propertyAddress}</p>
+            </a>
+          )}
+          {/* Tenant name */}
+          {tenantName && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="#8899aa" style={{ flexShrink: 0 }}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+              <p style={{ fontSize: 13, color: '#e8edf5', fontWeight: 500 }}>{tenantName}</p>
+            </div>
+          )}
+          {/* Tenant phone */}
+          {tenantNotifPrefs?.phone && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="#8899aa" style={{ flexShrink: 0 }}><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+              <a href={`tel:${tenantNotifPrefs.phone}`} style={{ fontSize: 13, color: '#60a5fa', textDecoration: 'none' }}>{tenantNotifPrefs.phone}</a>
+            </div>
           )}
         </div>
 
@@ -6218,6 +8071,36 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
               )}
             </div>
 
+            {/* Tenant access response */}
+            {fullReq && fullReq.scheduled_at && fullReq.tenant_home_at_scheduled !== null && (
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <p style={{ fontSize: 12, color: '#8899aa' }}>Tenant access response</p>
+                {fullReq.tenant_home_at_scheduled === true && (
+                  <p style={{ fontSize: 13, color: '#4ade80', fontWeight: 500 }}>✓ Tenant will be home</p>
+                )}
+                {fullReq.tenant_home_at_scheduled === false && fullReq.tenant_keys_ok === true && (
+                  <p style={{ fontSize: 13, color: '#4ade80', fontWeight: 500 }}>✓ Tenant out — key access confirmed</p>
+                )}
+                {fullReq.tenant_home_at_scheduled === false && fullReq.tenant_keys_ok === false && (
+                  <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}>
+                    <p style={{ fontSize: 12, color: '#fbbf24', fontWeight: 600, marginBottom: fullReq.tenant_alt_datetime ? 6 : 0 }}>
+                      ⚠ Tenant out, keys not permitted
+                    </p>
+                    {fullReq.tenant_alt_datetime ? (
+                      <p style={{ fontSize: 12, color: '#e8edf5' }}>
+                        Suggested alternative: <span style={{ color: '#60a5fa', fontWeight: 500 }}>{new Date(fullReq.tenant_alt_datetime).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} at {new Date(fullReq.tenant_alt_datetime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 12, color: '#8899aa' }}>Awaiting alternative time from tenant</p>
+                    )}
+                  </div>
+                )}
+                {fullReq.tenant_home_at_scheduled === false && fullReq.tenant_keys_ok === null && (
+                  <p style={{ fontSize: 13, color: '#8899aa' }}>Tenant won't be home — awaiting key access decision</p>
+                )}
+              </div>
+            )}
+
             {/* Priority — admin can change */}
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <p style={{ fontSize: 12, color: '#8899aa' }}>Priority</p>
@@ -6379,17 +8262,82 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
           ) : (
             <div>
               {(() => {
-                const entries: { id: string; ts: string; dot: string; label: string; sub?: string }[] = []
+                type Entry = { id: string; ts: string; sortTs?: string; dot: string; label: string; sub?: string }
+                const entries: Entry[] = []
+
+                // 1. Reported by tenant
                 if (request.created_at) entries.push({ id: 'reported', ts: request.created_at, dot: '#60a5fa', label: 'Reported by tenant', sub: tenantName ?? undefined })
+
+                // 2. Status history — deduplicate within 60s window
+                const seen = new Set<string>()
                 for (const h of history) {
+                  const key = `${h.old_status}→${h.new_status}`
+                  const tsMs = new Date(h.created_at).getTime()
+                  const isDupe = [...seen].some(s => {
+                    const [k, t] = s.split('|')
+                    return k === key && Math.abs(tsMs - Number(t)) < 60_000
+                  })
+                  if (isDupe) continue
+                  seen.add(`${key}|${tsMs}`)
                   const from = STATUS_LABEL[h.old_status ?? ''] ?? h.old_status ?? '—'
                   const to = STATUS_LABEL[h.new_status ?? ''] ?? h.new_status ?? '—'
-                  entries.push({ id: h.id, ts: h.created_at, dot: '#fbbf24', label: `Status: ${from} → ${to}`, sub: h.notes ?? undefined })
+                  const label = h.new_status === 'assigned' && contractorName ? 'Assigned to contractor' : `Status: ${from} → ${to}`
+                  const sub = h.new_status === 'assigned' && contractorName ? contractorName : (h.notes ?? undefined)
+                  entries.push({ id: h.id, ts: h.created_at, dot: '#fbbf24', label, sub })
                 }
+
+                // 3. Assigned to contractor (fallback if not in history)
                 if (fullReq?.assigned_contractor_id && contractorName && !history.some(h => h.new_status === 'assigned')) {
-                  entries.push({ id: 'contractor', ts: fullReq.updated_at ?? request.created_at ?? '', dot: '#4ade80', label: 'Contractor allocated', sub: contractorName })
+                  entries.push({ id: 'contractor', ts: fullReq.updated_at ?? request.created_at ?? '', dot: '#4ade80', label: 'Assigned to contractor', sub: contractorName })
                 }
-                if (fullReq?.resolved_at) entries.push({ id: 'resolved', ts: fullReq.resolved_at, dot: '#a78bfa', label: 'Resolved' })
+
+                // 4. Visit scheduled — sort by when it was recorded (in_progress history entry),
+                //    display the visit date in sub so right-side timestamp stays as "when scheduled"
+                if (fullReq?.scheduled_at) {
+                  const d = new Date(fullReq.scheduled_at)
+                  const visitLabel = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) + ' at ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                  const inProgressEntry = history.find(h => h.new_status === 'in_progress')
+                  const sortTs = inProgressEntry?.created_at ?? fullReq.updated_at ?? fullReq.scheduled_at
+                  entries.push({ id: 'scheduled', ts: sortTs, sortTs, dot: '#60a5fa', label: 'Visit scheduled', sub: visitLabel })
+                }
+
+                // 5. Tenant access responses
+                if (fullReq?.tenant_home_at_scheduled === true) {
+                  entries.push({ id: 'tenant_home', ts: fullReq.updated_at ?? '', dot: '#4ade80', label: 'Tenant confirmed — will be home' })
+                } else if (fullReq?.tenant_home_at_scheduled === false) {
+                  if (fullReq.tenant_keys_ok === true) {
+                    entries.push({ id: 'tenant_keys', ts: fullReq.updated_at ?? '', dot: '#4ade80', label: 'Tenant out — key access permitted' })
+                  } else if (fullReq.tenant_keys_ok === false) {
+                    entries.push({ id: 'tenant_nokeys', ts: fullReq.updated_at ?? '', dot: '#fbbf24', label: 'Tenant out — keys not permitted' })
+                    if (fullReq.tenant_alt_datetime) {
+                      const alt = new Date(fullReq.tenant_alt_datetime)
+                      const altLabel = alt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' at ' + alt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                      entries.push({ id: 'tenant_alt', ts: fullReq.tenant_alt_datetime, dot: '#fbbf24', label: 'Tenant proposed alternative time', sub: altLabel })
+                    }
+                  }
+                }
+
+                // 6. Invoices submitted / uploaded
+                for (const inv of invoices) {
+                  if (inv.status !== 'draft') {
+                    entries.push({
+                      id: `inv-${inv.id}`,
+                      ts: inv.created_at,
+                      dot: '#a78bfa',
+                      label: 'Invoice submitted',
+                      sub: `${inv.invoice_number} · £${inv.total.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                    })
+                  }
+                }
+
+                // 7. Resolved
+                if (fullReq?.resolved_at) entries.push({ id: 'resolved', ts: fullReq.resolved_at, dot: '#4ade80', label: 'Paid' })
+
+                // Sort by sortTs when present (allows separating sort key from display timestamp)
+                entries.sort((a, b) => new Date(a.sortTs ?? a.ts).getTime() - new Date(b.sortTs ?? b.ts).getTime())
+
+                if (entries.length === 0) return <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No activity yet.</p>
+
                 return entries.map((e, i) => {
                   const isLast = i === entries.length - 1
                   return (
@@ -6412,14 +8360,15 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
             </div>
           )}
 
-          {/* Messaging threads — admin sees both tenant and contractor threads */}
-          {!loading && (
-            <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#e8edf5', marginBottom: 8 }}>Communication Threads</p>
-              <MessageThread requestId={request.id} />
-            </div>
-          )}
         </div>
+
+        {/* Messaging threads — separate card so activity log isn't cut off */}
+        {!loading && (
+          <div style={{ ...CARD, padding: 16 }}>
+            <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 12 }}>Communication Threads</p>
+            <MessageThread requestId={request.id} />
+          </div>
+        )}
       </div>
 
       {/* Assign Contractor sheet */}
@@ -6478,24 +8427,26 @@ function MaintenanceDetailPanel({ request, onBack, onUpdate }: {
 function capFirst(s: string) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s }
 
 const PROP_STATUS_LABEL: Record<PropStatus, string> = {
-  active:   'Tenanted',
-  tenanted: 'Tenanted',
-  notice:   'Handed in Notice',
-  viewings: 'Viewings',
-  for_let:  'Listed for Let',
-  vacant:   'Vacant',
+  active:     'Tenanted',
+  tenanted:   'Tenanted',
+  notice:     'Handed in Notice',
+  moving_in:  'Moving In',
+  viewings:   'Viewings',
+  for_let:    'Listed for Let',
+  vacant:     'Vacant',
 }
 
 const PROP_STATUS_STYLE: Record<PropStatus, React.CSSProperties> = {
-  active:   { background: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
-  tenanted: { background: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
-  notice:   { background: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
-  viewings: { background: 'rgba(96,165,250,0.15)',  color: '#60a5fa' },
-  for_let:  { background: 'rgba(136,153,170,0.12)', color: '#8899aa' },
-  vacant:   { background: 'rgba(248,113,113,0.12)', color: '#f87171' },
+  active:    { background: 'rgba(74,222,128,0.12)',   color: '#4ade80' },
+  tenanted:  { background: 'rgba(74,222,128,0.12)',   color: '#4ade80' },
+  notice:    { background: 'rgba(249,115,22,0.14)',   color: '#f97316' },
+  moving_in: { background: 'rgba(167,139,250,0.15)',  color: '#a78bfa' },
+  viewings:  { background: 'rgba(96,165,250,0.15)',   color: '#60a5fa' },
+  for_let:   { background: 'rgba(136,153,170,0.12)',  color: '#8899aa' },
+  vacant:    { background: 'rgba(248,113,113,0.12)',  color: '#f87171' },
 }
 
-function AdminPropertyCard({ property, onLinkTenant, onEdit, onView, onToggleListing }: { property: AdminPropRow; onLinkTenant: (id: string) => void; onEdit: (p: AdminPropRow) => void; onView: (p: AdminPropRow) => void; onToggleListing: (p: AdminPropRow) => void }) {
+function AdminPropertyCard({ property, pendingNotice, onLinkTenant, onEdit, onView, onToggleListing }: { property: AdminPropRow; pendingNotice: TenancyNotice | null; onLinkTenant: (id: string) => void; onEdit: (p: AdminPropRow) => void; onView: (p: AdminPropRow) => void; onToggleListing: (p: AdminPropRow) => void }) {
   const landlordName = property.profiles?.full_name ?? property.profiles?.email ?? 'Unknown landlord'
   const statusKey = (property.status ?? 'for_let') as PropStatus
   const statusStyle = PROP_STATUS_STYLE[statusKey]
@@ -6513,9 +8464,21 @@ function AdminPropertyCard({ property, onLinkTenant, onEdit, onView, onToggleLis
             <p style={{ fontSize: 14, color: '#e8edf5', fontFamily: 'Georgia, serif' }} className="truncate">{property.address}</p>
             {property.postcode && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 2 }}>{property.postcode}</p>}
           </div>
-          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>
-            {PROP_STATUS_LABEL[statusKey] ?? capFirst(statusKey)}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 4, flexShrink: 0, letterSpacing: '0.08em', ...statusStyle }}>
+              {PROP_STATUS_LABEL[statusKey] ?? capFirst(statusKey)}
+            </span>
+            {property.move_in_date && (
+              <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                Moving in: {fmtDate(property.move_in_date)}
+              </span>
+            )}
+            {(property.move_out_date || pendingNotice) && (
+              <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                Moving out: {fmtDate((property.move_out_date ?? pendingNotice!.vacate_date))}
+              </span>
+            )}
+          </div>
         </div>
         {property.description && (
           <p style={{ fontSize: 11, color: '#8899aa', marginTop: 6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>{property.description}</p>
@@ -6563,7 +8526,6 @@ const CERT_TYPES = [
   'EPC',
   'Legionella Risk Assessment',
   'PAT Testing',
-  'Smoke & CO Alarm',
   'Fire Risk Assessment',
   'HMO Licence',
   'Inventory',
@@ -6578,7 +8540,6 @@ const CERT_EXPIRY_YEARS: Record<string, number | null> = {
   'EPC': 10,
   'Legionella Risk Assessment': null,
   'PAT Testing': null,
-  'Smoke & CO Alarm': null,
   'Fire Risk Assessment': null,
   'HMO Licence': null,
   'Inventory': null,
@@ -6973,13 +8934,19 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
   onSaved: (patch: Partial<AdminPropRow>) => void
   onDelete: (p: AdminPropRow) => void
 }) {
-  const [address, setAddress] = useState(property.address)
+  const addressParts = property.address.split(',').map(s => s.trim())
+  const [addrLine1, setAddrLine1] = useState(addressParts[0] ?? '')
+  const [addrLine2, setAddrLine2] = useState(addressParts[1] ?? '')
+  const [addrLine3, setAddrLine3] = useState(addressParts[2] ?? '')
   const [postcode, setPostcode] = useState(property.postcode ?? '')
   const [propType, setPropType] = useState(property.property_type ?? '')
   const [bedrooms, setBedrooms] = useState(property.bedrooms != null ? String(property.bedrooms) : '')
   const [rent, setRent] = useState(property.monthly_rent != null ? String(property.monthly_rent) : '')
   const [description, setDescription] = useState(property.description ?? '')
-  const [propStatus, setPropStatus] = useState<PropStatus>((property.status ?? 'for_let') as PropStatus)
+  const scheduledMoveIn = !!property.move_in_date
+  const [propStatus, setPropStatus] = useState<PropStatus>(scheduledMoveIn ? 'tenanted' : (property.status === 'active' ? 'tenanted' : (property.status ?? 'for_let')) as PropStatus)
+  const [moveInDate, setMoveInDate] = useState(property.move_in_date ?? '')
+  const [moveOutDate, setMoveOutDate] = useState(property.move_out_date ?? '')
   const [landlordId, setLandlordId] = useState(property.landlord_id)
   const [photoUrls, setPhotoUrls] = useState<string[]>(property.photo_urls ?? [])
   const [hasGas, setHasGas] = useState(property.has_gas)
@@ -7011,10 +8978,14 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!address.trim()) { setError('Address is required'); return }
+    if (!addrLine1.trim()) { setError('Address line 1 is required'); return }
     if (!landlordId) { setError('Please select a landlord'); return }
+    const address = [addrLine1, addrLine2, addrLine3].map(s => s.trim()).filter(Boolean).join(', ')
+    const today = new Date().toISOString().slice(0, 10)
+    const isFutureMoveIn = propStatus === 'tenanted' && moveInDate && moveInDate > today
+    const isFutureMoveOut = propStatus === 'notice' && moveOutDate && moveOutDate > today
     const patch: Partial<AdminPropRow> = {
-      address: address.trim(),
+      address,
       postcode: postcode.trim() || null,
       property_type: propType || null,
       bedrooms: bedrooms ? parseInt(bedrooms) : null,
@@ -7023,14 +8994,37 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
       photo_urls: photoUrls,
       has_gas: hasGas,
       landlord_id: landlordId,
-      status: (propStatus === 'tenanted' ? 'active' : propStatus) as PropStatus,
-      is_active: propStatus === 'tenanted' || propStatus === 'active' || propStatus === 'notice',
+      ...(isFutureMoveIn ? {
+        move_in_date: moveInDate,
+        move_out_date: null,
+      } : isFutureMoveOut ? {
+        status: 'notice' as PropStatus,
+        is_active: true,
+        move_out_date: moveOutDate,
+        move_in_date: null,
+      } : {
+        status: (propStatus === 'tenanted' ? 'active' : propStatus) as PropStatus,
+        is_active: propStatus === 'tenanted' || propStatus === 'active' || propStatus === 'notice',
+        move_in_date: null,
+        move_out_date: null,
+      }),
     }
     onSaved(patch)
     supabase.from('properties').update(patch).eq('id', property.id)
       .then(({ error: dbError }) => {
         if (dbError) console.error('Property save failed:', dbError.message)
       })
+    if (isFutureMoveIn) {
+      supabase.functions.invoke('send-tenancy-notification', {
+        body: {
+          propertyId: property.id,
+          propertyAddress: address.trim(),
+          moveInDate,
+          landlordEmail: property.profiles?.email ?? '',
+          landlordName: property.profiles?.full_name ?? property.profiles?.email ?? '',
+        },
+      }).catch(err => console.warn('Tenancy notification failed:', err))
+    }
   }
 
   return (
@@ -7041,8 +9035,14 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8899aa', padding: 4, cursor: 'pointer', fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <FormField label="Address *">
-            <input type="text" value={address} onChange={e => setAddress(e.target.value)} placeholder="123 High Street" style={INPUT_STYLE} autoFocus />
+          <FormField label="Full Address *">
+            <input type="text" value={addrLine1} onChange={e => setAddrLine1(e.target.value)} placeholder="e.g. 3/L, 337 Strathmore Avenue" style={INPUT_STYLE} autoFocus />
+          </FormField>
+          <FormField label="Location">
+            <input type="text" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="e.g. Dundee" style={INPUT_STYLE} />
+          </FormField>
+          <FormField label="County (if applicable)">
+            <input type="text" value={addrLine3} onChange={e => setAddrLine3(e.target.value)} placeholder="e.g. Angus" style={INPUT_STYLE} />
           </FormField>
           <FormField label="Postcode">
             <input type="text" value={postcode} onChange={e => setPostcode(e.target.value)} placeholder="DD1 1AA" style={INPUT_STYLE} />
@@ -7072,7 +9072,14 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
           <FormField label="Status">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
               {(['tenanted', 'notice', 'viewings', 'vacant', 'for_let'] as PropStatus[]).map(s => (
-                <button key={s} type="button" onClick={() => setPropStatus(s)}
+                <button key={s} type="button" onClick={() => {
+                  setPropStatus(s)
+                  if (s === 'notice' && !moveOutDate) {
+                    const d = new Date()
+                    d.setDate(d.getDate() + 28)
+                    setMoveOutDate(d.toISOString().slice(0, 10))
+                  }
+                }}
                   style={{ padding: '8px 4px', borderRadius: 8, fontSize: 10, fontWeight: 500, border: '1px solid', cursor: 'pointer',
                     borderColor: propStatus === s ? PROP_STATUS_STYLE[s].color as string : 'rgba(255,255,255,0.1)',
                     background: propStatus === s ? PROP_STATUS_STYLE[s].background as string : 'rgba(255,255,255,0.04)',
@@ -7082,6 +9089,32 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
               ))}
             </div>
           </FormField>
+          {propStatus === 'tenanted' && (
+            <FormField label="Moving in from">
+              <input type="date" value={moveInDate} onChange={e => setMoveInDate(e.target.value)} style={INPUT_STYLE} />
+              {moveInDate && moveInDate > new Date().toISOString().slice(0, 10) ? (
+                <p style={{ fontSize: 11, color: '#4ade80', marginTop: 4 }}>Status will update to Tenanted on {fmtDate(moveInDate)}</p>
+              ) : moveInDate ? (
+                <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>Status will update to Tenanted immediately</p>
+              ) : (
+                <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>Leave blank to set as Tenanted now</p>
+              )}
+            </FormField>
+          )}
+          {propStatus === 'notice' && (
+            <FormField label="Move-out date (28-day notice)">
+              <input type="date" value={moveOutDate} onChange={e => setMoveOutDate(e.target.value)} style={INPUT_STYLE} />
+              {moveOutDate && moveOutDate > new Date().toISOString().slice(0, 10) ? (
+                <p style={{ fontSize: 11, color: '#fbbf24', marginTop: 4 }}>
+                  Pro-rated rent will apply from {new Date(moveOutDate + 'T12:00:00').toLocaleDateString('en-GB', { month: 'long' })} · Vacant on {fmtDate(moveOutDate)}
+                </p>
+              ) : moveOutDate ? (
+                <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>Move-out date is today or in the past — pro-rated rent applied immediately</p>
+              ) : (
+                <p style={{ fontSize: 11, color: '#8899aa', marginTop: 4 }}>Auto-calculated as 28 days from today — adjust if needed</p>
+              )}
+            </FormField>
+          )}
           <FormField label="Gas Supply">
             <div style={{ display: 'flex', gap: 8 }}>
               {([true, false] as const).map((val) => (
@@ -7146,3 +9179,111 @@ function EditPropertyModal({ property, landlords, onClose, onSaved, onDelete }: 
     </div>
   )
 }
+
+function AdminPRTSignModal({ propertyId: _propertyId, sigCanvasRef, sigDrawing, sigHasStroke, sigTypedName, setSigTypedName, sigSubmitting, sigError, onClose, onSign }: {
+  propertyId: string
+  sigCanvasRef: React.RefObject<HTMLCanvasElement | null>
+  sigDrawing: React.MutableRefObject<boolean>
+  sigHasStroke: React.MutableRefObject<boolean>
+  sigTypedName: string
+  setSigTypedName: (v: string) => void
+  sigSubmitting: boolean
+  sigError: string | null
+  onClose: () => void
+  onSign: () => void
+}) {
+  function getPos(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    const canvas = sigCanvasRef.current
+    if (!canvas) return { x: 0, y: 0 }
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const src = 'touches' in e ? e.touches[0] : e
+    return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY }
+  }
+  function onPointerDown(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    sigDrawing.current = true
+    const canvas = sigCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')!
+    const { x, y } = getPos(e)
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+  }
+  function onPointerMove(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    if (!sigDrawing.current) return
+    const canvas = sigCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')!
+    ctx.strokeStyle = '#0D1B3E'
+    ctx.lineWidth = 2.5
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    const { x, y } = getPos(e)
+    ctx.lineTo(x, y)
+    ctx.stroke()
+    sigHasStroke.current = true
+  }
+  function onPointerUp() { sigDrawing.current = false }
+  function clearCanvas() {
+    const canvas = sigCanvasRef.current
+    if (!canvas) return
+    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
+    sigHasStroke.current = false
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#0d1b2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 520 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Sign Agreement</p>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8899aa', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 11, color: '#8899aa', marginBottom: 6 }}>Full name</p>
+          <input
+            value={sigTypedName}
+            onChange={e => setSigTypedName(e.target.value)}
+            placeholder="Enter your full name"
+            style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '10px 12px', color: '#e8edf5', fontSize: 13, boxSizing: 'border-box' }}
+          />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <p style={{ fontSize: 11, color: '#8899aa' }}>Draw signature</p>
+            <button type="button" onClick={clearCanvas}
+              style={{ fontSize: 11, color: '#8899aa', background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 5, padding: '3px 9px', cursor: 'pointer' }}>
+              Clear
+            </button>
+          </div>
+          <canvas
+            ref={sigCanvasRef}
+            width={600}
+            height={140}
+            onMouseDown={onPointerDown}
+            onMouseMove={onPointerMove}
+            onMouseUp={onPointerUp}
+            onMouseLeave={onPointerUp}
+            onTouchStart={onPointerDown}
+            onTouchMove={onPointerMove}
+            onTouchEnd={onPointerUp}
+            style={{ width: '100%', height: 140, background: '#ffffff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 9, cursor: 'crosshair', touchAction: 'none' }}
+          />
+          <p style={{ fontSize: 11, color: '#8899aa', marginTop: 6, textAlign: 'center' }}>Sign with your finger or mouse</p>
+        </div>
+        {sigError && <p style={{ fontSize: 12, color: '#f87171', marginBottom: 12 }}>{sigError}</p>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={onClose}
+            style={{ flex: 1, padding: '11px 0', borderRadius: 8, background: 'rgba(255,255,255,0.06)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.1)', fontSize: 13, cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button type="button" onClick={onSign} disabled={sigSubmitting}
+            style={{ flex: 2, padding: '11px 0', borderRadius: 8, background: sigSubmitting ? 'rgba(232,237,245,0.4)' : '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 13, fontWeight: 600, cursor: sigSubmitting ? 'default' : 'pointer' }}>
+            {sigSubmitting ? 'Signing…' : 'Sign & Execute Agreement'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
