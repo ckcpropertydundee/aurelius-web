@@ -50,7 +50,7 @@ interface AuditEvent { id: string; ts: string; cat: 'maintenance' | 'payment' | 
 interface PropertyKey { id: string; property_id: string; key_type: 'master' | 'tenant' | 'contractor'; holder_name: string | null; holder_role: string | null; checked_out_at: string | null; notes: string | null }
 interface KeyEvent { id: string; property_id: string; key_type: string; action: 'checked_out' | 'returned'; person_name: string | null; notes: string | null; created_at: string }
 type MeterType = 'gas' | 'electricity'
-interface MeterReading { id: string; property_id: string; meter_type: MeterType; reading: number; reading_date: string; notes: string | null; created_at: string }
+interface MeterReading { id: string; property_id: string; utility_type: MeterType; reading: number; reading_raw: string | null; reading_date: string; notes: string | null; created_at: string }
 interface LandlordRegistration { id: string; landlord_id: string; registration_number: string; council_area: string | null; expiry_date: string | null }
 interface AuditLogRow { id: string; action: string; entity_type: string | null; entity_id: string | null; metadata: Record<string, unknown> | null; created_at: string; user_id: string | null; user_role: string | null; user_name: string | null; user_email: string | null }
 type JobStatus = 'pending' | 'in_progress' | 'done' | 'cancelled'
@@ -62,74 +62,75 @@ interface PropertyJob { id: string; property_id: string; title: string; descript
 
 const CARD: React.CSSProperties = { background: '#112240', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12 }
 
-const TODO_CHECKLISTS: Record<string, string[]> = {
+interface ChecklistItem { label: string; priority: 'urgent' | 'soon' | 'info' }
+const TODO_CHECKLISTS: Record<string, ChecklistItem[]> = {
   'Move In': [
-    'Tenancy agreement signed by all parties',
-    'Deposit collected and registered with scheme',
-    'Keys issued to tenant',
-    'Move-in inventory completed and signed',
-    'Standing order / payment method set up',
-    'Utility meter readings taken',
-    'Welcome pack sent to tenant',
+    { label: 'Tenancy agreement signed by all parties', priority: 'urgent' },
+    { label: 'Deposit collected and registered with scheme', priority: 'urgent' },
+    { label: 'Keys issued to tenant', priority: 'urgent' },
+    { label: 'Move-in inventory completed and signed', priority: 'urgent' },
+    { label: 'Standing order / payment method set up', priority: 'soon' },
+    { label: 'Utility meter readings taken', priority: 'soon' },
+    { label: 'Welcome pack sent to tenant', priority: 'info' },
   ],
   'Move Out': [
-    'Check-out inspection date agreed with tenant',
-    'Keys returned from tenant',
-    'Final utility meter readings taken',
-    'Property condition assessed against inventory',
-    'Deposit return amount agreed',
-    'Deposit returned within legal timeframe',
-    'Any deductions documented and evidenced',
-    'Property cleaned and ready for re-let',
-    'Re-advertise / find next tenant',
+    { label: 'Check-out inspection date agreed with tenant', priority: 'urgent' },
+    { label: 'Keys returned from tenant', priority: 'urgent' },
+    { label: 'Property condition assessed against inventory', priority: 'urgent' },
+    { label: 'Deposit returned within legal timeframe', priority: 'urgent' },
+    { label: 'Final utility meter readings taken', priority: 'soon' },
+    { label: 'Deposit return amount agreed', priority: 'soon' },
+    { label: 'Any deductions documented and evidenced', priority: 'soon' },
+    { label: 'Property cleaned and ready for re-let', priority: 'info' },
+    { label: 'Re-advertise / find next tenant', priority: 'info' },
   ],
   'Notice': [
-    'Notice acknowledged in writing to tenant',
-    'Vacate date confirmed',
-    'Check-out inspection date agreed',
-    'Deposit return procedure explained to tenant',
-    'Landlord notified of notice',
-    'Property relisting and marketing planned',
+    { label: 'Notice acknowledged in writing to tenant', priority: 'urgent' },
+    { label: 'Vacate date confirmed', priority: 'urgent' },
+    { label: 'Check-out inspection date agreed', priority: 'soon' },
+    { label: 'Deposit return procedure explained to tenant', priority: 'soon' },
+    { label: 'Landlord notified of notice', priority: 'soon' },
+    { label: 'Property relisting and marketing planned', priority: 'info' },
   ],
   'Viewing': [
-    'Viewing time confirmed with applicant',
-    'Property access arranged',
-    'Application form sent to applicant',
-    'References and right-to-rent checks requested',
-    'Outcome communicated to applicant',
+    { label: 'Viewing time confirmed with applicant', priority: 'urgent' },
+    { label: 'Property access arranged', priority: 'urgent' },
+    { label: 'Application form sent to applicant', priority: 'soon' },
+    { label: 'References and right-to-rent checks requested', priority: 'soon' },
+    { label: 'Outcome communicated to applicant', priority: 'info' },
   ],
   'Emergency': [
-    'Emergency contractor contacted immediately',
-    'Tenant confirmed safe and informed',
-    'Site visit confirmed and attended',
-    'Emergency works completed',
-    'Follow-up inspection carried out',
-    'Invoice received and filed',
-    'Incident documented for records',
+    { label: 'Emergency contractor contacted immediately', priority: 'urgent' },
+    { label: 'Tenant confirmed safe and informed', priority: 'urgent' },
+    { label: 'Site visit confirmed and attended', priority: 'urgent' },
+    { label: 'Emergency works completed', priority: 'urgent' },
+    { label: 'Follow-up inspection carried out', priority: 'soon' },
+    { label: 'Invoice received and filed', priority: 'soon' },
+    { label: 'Incident documented for records', priority: 'info' },
   ],
   'Urgent Maintenance': [
-    'Contractor contacted',
-    'Site visit scheduled',
-    'Tenant informed of visit date and time',
-    'Quote received and approved',
-    'Works completed and signed off',
-    'Invoice received and filed',
+    { label: 'Contractor contacted', priority: 'urgent' },
+    { label: 'Site visit scheduled', priority: 'urgent' },
+    { label: 'Tenant informed of visit date and time', priority: 'soon' },
+    { label: 'Quote received and approved', priority: 'soon' },
+    { label: 'Works completed and signed off', priority: 'soon' },
+    { label: 'Invoice received and filed', priority: 'info' },
   ],
   'Maintenance': [
-    'Contractor contacted',
-    'Site visit scheduled',
-    'Tenant informed of visit date and time',
-    'Quote received and approved',
-    'Works completed and signed off',
-    'Invoice received and filed',
+    { label: 'Contractor contacted', priority: 'urgent' },
+    { label: 'Site visit scheduled', priority: 'urgent' },
+    { label: 'Tenant informed of visit date and time', priority: 'soon' },
+    { label: 'Quote received and approved', priority: 'soon' },
+    { label: 'Works completed and signed off', priority: 'soon' },
+    { label: 'Invoice received and filed', priority: 'info' },
   ],
   'Certificate': [
-    'Renewal provider / engineer contacted',
-    'Inspection or assessment booked',
-    'Inspection attended and completed',
-    'New certificate received from provider',
-    'Certificate uploaded to property documents',
-    'Expiry date updated in records',
+    { label: 'Renewal provider / engineer contacted', priority: 'urgent' },
+    { label: 'Inspection or assessment booked', priority: 'urgent' },
+    { label: 'Inspection attended and completed', priority: 'urgent' },
+    { label: 'New certificate received from provider', priority: 'soon' },
+    { label: 'Certificate uploaded to property documents', priority: 'soon' },
+    { label: 'Expiry date updated in records', priority: 'info' },
   ],
 }
 
@@ -195,12 +196,14 @@ export default function AdminDashboard() {
   const [tenantedCount, setTenantedCount] = useState<number | null>(null)
   const [monthlyRentRoll, setMonthlyRentRoll] = useState<number>(0)
   const [monthlyMgmtFee, setMonthlyMgmtFee] = useState<number>(0)
-  const [monthlyRepairDeductions, setMonthlyRepairDeductions] = useState<number>(0)
+  const [_monthlyRepairDeductions, setMonthlyRepairDeductions] = useState<number>(0)
+  const [monthlyInHouseCost, setMonthlyInHouseCost] = useState<number>(0)
+  const [monthlyMaintCost, setMonthlyMaintCost] = useState<number>(0)
   const [ytdGross, setYtdGross] = useState<number>(0)
   const [ytdNet, setYtdNet] = useState<number>(0)
 
   const [rentCollection, setRentCollection] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; collected: number; isPaid: boolean; isVacant: boolean; isProRated?: boolean; moveOutDate?: string; moveInDate?: string; paymentId: string | null; dueDate: string | null; paymentMethod: string | null; paymentNotes: string | null; landlordEmail: string; landlordName: string; paidAt: string | null }[]>([])
-  const [markPaidItem, setMarkPaidItem] = useState<{ tenancyId: string; address: string; expected: number; paymentId: string | null; dueDate: string | null; landlordEmail: string; landlordName: string } | null>(null)
+  const [markPaidItem, setMarkPaidItem] = useState<{ tenancyId: string; propertyId: string; address: string; expected: number; paymentId: string | null; dueDate: string | null; landlordEmail: string; landlordName: string } | null>(null)
   const [signals, setSignals] = useState<ImprovementSignal[]>([])
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('6M')
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
@@ -245,6 +248,13 @@ export default function AdminDashboard() {
     try { return JSON.parse(localStorage.getItem('aurelius-todo-checks') ?? '{}') }
     catch { return {} }
   })
+  // Sticky todos: items persisted in localStorage until all checklist items are checked off.
+  // Keyed by todo id so they survive property status changes (e.g. moving_in → active).
+  type StickyTodo = { id: string; priority: 'urgent' | 'soon' | 'info'; category: string; title: string; detail: string }
+  const [stickyTodos, setStickyTodos] = useState<Record<string, StickyTodo>>(() => {
+    try { return JSON.parse(localStorage.getItem('aurelius-sticky-todos') ?? '{}') }
+    catch { return {} }
+  })
   const [usersLoaded, setUsersLoaded] = useState(false)
 
   const [quickError, setQuickError] = useState<string | null>(null)
@@ -268,6 +278,7 @@ export default function AdminDashboard() {
   const [compliancePresetType, setCompliancePresetType] = useState<string | undefined>(undefined)
   const [editComplianceItem, setEditComplianceItem] = useState<ComplianceItem | null>(null)
   const [confirmDeleteComplianceId, setConfirmDeleteComplianceId] = useState<string | null>(null)
+  const [confirmingPhysicalCheck, setConfirmingPhysicalCheck] = useState<string | null>(null)
   const [prtDoc, setPrtDoc] = useState<{ id: string; label: string; url: string | null; uploaded_at: string } | null>(null)
   const [prtLoading, setPrtLoading] = useState(false)
   const [prtUploading, setPrtUploading] = useState(false)
@@ -377,6 +388,7 @@ export default function AdminDashboard() {
   const [newMeterDate, setNewMeterDate] = useState('')
   const [newMeterNotes, setNewMeterNotes] = useState('')
   const [meterSaving, setMeterSaving] = useState(false)
+  const [meterError, setMeterError] = useState<string | null>(null)
   const [meterCertUploading, setMeterCertUploading] = useState(false)
 
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([])
@@ -1239,7 +1251,9 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
         .select()
       existingKeys.push(...((inserted ?? []) as PropertyKey[]))
     }
-    setPropertyKeys(keyTypes.map(t => existingKeys.find(k => k.key_type === t)!).filter(Boolean))
+    const canonical = keyTypes.flatMap(t => existingKeys.filter(k => k.key_type === t))
+    const extras = existingKeys.filter(k => !(keyTypes as readonly string[]).includes(k.key_type))
+    setPropertyKeys([...canonical, ...extras])
     setKeyEvents((events ?? []) as KeyEvent[])
     setKeysLoading(false)
   }
@@ -1250,9 +1264,10 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     const name = checkOutName.trim()
     const role = checkOutRole.trim() || null
     const notesVal = checkOutNotes.trim() || null
-    const keyType = checkOutKeyType
+    const keyId = checkOutKeyType
+    const keyType = propertyKeys.find(k => k.id === keyId)?.key_type ?? ''
     setPropertyKeys(prev => prev.map(k =>
-      k.key_type === keyType ? { ...k, holder_name: name, holder_role: role, checked_out_at: now, notes: notesVal } : k
+      k.id === keyId ? { ...k, holder_name: name, holder_role: role, checked_out_at: now, notes: notesVal } : k
     ))
     setKeyEvents(prev => [{ id: crypto.randomUUID(), property_id: selectedProperty.id, key_type: keyType, action: 'checked_out', person_name: name, notes: notesVal, created_at: now }, ...prev])
     setCheckOutKeyType(null)
@@ -1261,25 +1276,26 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     setCheckOutNotes('')
     supabase.from('property_keys')
       .update({ holder_name: name, holder_role: role, checked_out_at: now, notes: notesVal })
-      .eq('property_id', selectedProperty.id).eq('key_type', keyType)
+      .eq('id', keyId)
       .then(({ error }) => {
         if (!error) supabase.from('key_events').insert({ property_id: selectedProperty.id, key_type: keyType, action: 'checked_out', person_name: name, notes: notesVal })
         else console.error('Key checkout save failed:', error.message)
       })
   }
 
-  function handleReturnKey(keyType: string) {
+  function handleReturnKey(keyId: string) {
     if (!selectedProperty) return
-    const key = propertyKeys.find(k => k.key_type === keyType)
+    const key = propertyKeys.find(k => k.id === keyId)
+    const keyType = key?.key_type ?? ''
     const now = new Date().toISOString()
     setPropertyKeys(prev => prev.map(k =>
-      k.key_type === keyType ? { ...k, holder_name: null, holder_role: null, checked_out_at: null, notes: null } : k
+      k.id === keyId ? { ...k, holder_name: null, holder_role: null, checked_out_at: null, notes: null } : k
     ))
     setKeyEvents(prev => [{ id: crypto.randomUUID(), property_id: selectedProperty.id, key_type: keyType, action: 'returned', person_name: key?.holder_name ?? null, notes: null, created_at: now }, ...prev])
     setReturnConfirmKey(null)
     supabase.from('property_keys')
       .update({ holder_name: null, holder_role: null, checked_out_at: null, notes: null })
-      .eq('property_id', selectedProperty.id).eq('key_type', keyType)
+      .eq('id', keyId)
       .then(({ error }) => {
         if (!error) supabase.from('key_events').insert({ property_id: selectedProperty.id, key_type: keyType, action: 'returned', person_name: key?.holder_name ?? null, notes: null })
         else console.error('Key return save failed:', error.message)
@@ -1298,6 +1314,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
       .in('maintenance_request_id', mrIds)
       .eq('status', 'approved')
       .eq('deduction_queued', true)
+      .is('deducted_at', null)
       .order('created_at', { ascending: false })
     setPropertyDeductions(((invData ?? []) as { id: string; invoice_number: string; description: string | null; total: number; created_at: string; maintenance_request_id: string | null }[]).map(inv => ({
       id: inv.id,
@@ -1371,7 +1388,6 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
       .from('meter_readings')
       .select('*')
       .eq('property_id', propertyId)
-      .order('reading_date', { ascending: false })
       .order('created_at', { ascending: false })
     setMeterReadings((data ?? []) as MeterReading[])
     setMeterReadingsLoading(false)
@@ -1397,24 +1413,25 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
 
   async function handleAddMeterReading() {
     if (!selectedProperty || !newMeterReading.trim()) return
-    const val = parseFloat(newMeterReading)
+    const val = parseFloat(newMeterReading.replace('/', '.'))
     if (isNaN(val)) return
     setMeterSaving(true)
     const { error } = await supabase.from('meter_readings').insert({
       property_id: selectedProperty.id,
-      meter_type: newMeterType,
+      utility_type: newMeterType,
       reading: val,
+      reading_raw: newMeterReading.trim(),
       reading_date: newMeterDate || new Date().toISOString().slice(0, 10),
       notes: newMeterNotes.trim() || null,
     })
-    if (!error) {
-      await loadMeterReadings(selectedProperty.id)
-      setShowAddMeterModal(false)
-      setNewMeterReading('')
-      setNewMeterDate('')
-      setNewMeterNotes('')
-    }
     setMeterSaving(false)
+    if (error) { setMeterError(error.message); return }
+    await loadMeterReadings(selectedProperty.id)
+    setShowAddMeterModal(false)
+    setNewMeterReading('')
+    setNewMeterDate('')
+    setNewMeterNotes('')
+    setMeterError(null)
   }
 
   useEffect(() => {
@@ -1512,7 +1529,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
       const monthEnd = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
       const ytdStart = `${now2.getFullYear()}-01-01`
 
-      const [propsRes, tenanciesForCollRes, paymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes, vacatedNoticesRes] = await Promise.all([
+      const [propsRes, tenanciesForCollRes, paymentsRes, thisMonthPaysRes, stripeThisMonthRes, stripeHistoryRes, maintRes, vacatedNoticesRes, inHouseRes] = await Promise.all([
         supabase.from('properties').select('id, address, monthly_rent, is_active, status, purchase_price, move_out_date, move_in_date, profiles(full_name, email)'),
         supabase.from('tenancies').select('id, property_id, monthly_rent, start_date').eq('is_current', true),
         supabase.from('payments').select('amount, paid_date').not('paid_date', 'is', null).gte('paid_date', cutoffStr).neq('payment_method', 'stripe'),
@@ -1521,6 +1538,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
         supabase.from('rent_payments').select('amount, management_fee, repair_deductions, paid_at').in('status', ['succeeded', 'paid']).not('paid_at', 'is', null).gte('paid_at', cutoffStr),
         supabase.from('maintenance_requests').select('cost, created_at').not('cost', 'is', null).gte('created_at', cutoffStr),
         supabase.from('tenancy_notices').select('property_id, tenancy_id, vacate_date').gte('vacate_date', monthStart).lte('vacate_date', monthEnd),
+        supabase.from('contractor_invoices').select('total').is('contractor_id', null).eq('deduction_queued', true).gte('created_at', monthStart).lte('created_at', monthEnd + 'T23:59:59'),
       ])
 
       const allProps = (propsRes.data ?? []) as unknown as { id: string; address: string; monthly_rent: number | null; is_active: boolean; status: string | null; purchase_price: number | null; move_out_date: string | null; move_in_date: string | null; profiles: { full_name: string | null; email: string }[] | null }[]
@@ -1546,12 +1564,15 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
       const stripeThisMonth = (stripeThisMonthRes.data ?? []) as { id: string; tenancy_id: string; amount: number; management_fee: number; repair_deductions: number; paid_at: string }[]
       setMonthlyMgmtFee(stripeThisMonth.reduce((s, p) => s + Number(p.management_fee ?? 0), 0))
       setMonthlyRepairDeductions(stripeThisMonth.reduce((s, p) => s + Number(p.repair_deductions ?? 0), 0))
+      setMonthlyInHouseCost(((inHouseRes.data ?? []) as { total: number }[]).reduce((s, r) => s + Number(r.total ?? 0), 0))
+      const thisMonthStr = monthStart.slice(0, 7)
+      setMonthlyMaintCost(((maintRes.data ?? []) as { cost: number; created_at: string }[]).filter(m => String(m.created_at).slice(0, 7) === thisMonthStr).reduce((s, m) => s + Number(m.cost ?? 0), 0))
       const vacatedNotices = (vacatedNoticesRes.data ?? []) as { property_id: string; tenancy_id: string; vacate_date: string }[]
       const noticeByPropId: Record<string, { tenancyId: string; vacateDate: string }> = {}
       for (const n of vacatedNotices) {
         noticeByPropId[n.property_id] = { tenancyId: n.tenancy_id, vacateDate: n.vacate_date }
       }
-      const tenanciesByPropId: Record<string, { id: string; monthly_rent: number | null }[]> = {}
+      const tenanciesByPropId: Record<string, { id: string; monthly_rent: number | null; start_date: string | null }[]> = {}
       for (const t of tenanciesForColl) {
         if (!tenanciesByPropId[t.property_id]) tenanciesByPropId[t.property_id] = []
         tenanciesByPropId[t.property_id].push(t)
@@ -1601,8 +1622,12 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
           }
 
           // Pro-rated: property is moving in — show rent due from move-in date to end of month
-          if (prop.status === 'moving_in' && prop.move_in_date) {
-            const moveInDate = new Date(prop.move_in_date + 'T12:00:00')
+          // Falls back to tenancy start_date so pro-rating survives after applyMoveIns clears move_in_date
+          const tenancyStartThisMonth = tenancies.find(t => t.start_date && t.start_date >= monthStart && t.start_date <= monthEnd && new Date(t.start_date + 'T12:00:00').getDate() > 1)
+          const effectiveMoveInDate = prop.move_in_date ?? tenancyStartThisMonth?.start_date ?? null
+          const moveInThisMonth = effectiveMoveInDate && effectiveMoveInDate >= monthStart && effectiveMoveInDate <= monthEnd
+          if ((prop.status === 'moving_in' || moveInThisMonth) && effectiveMoveInDate) {
+            const moveInDate = new Date(effectiveMoveInDate + 'T12:00:00')
             const moveInDay = moveInDate.getDate()
             const daysInMonth = new Date(moveInDate.getFullYear(), moveInDate.getMonth() + 1, 0).getDate()
             const monthlyRent = tenancies.reduce((s, t) => s + Number(t.monthly_rent ?? 0), 0) || Number(prop.monthly_rent ?? 0)
@@ -1622,7 +1647,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
               isPaid: proRated > 0 && collected >= proRated,
               isVacant: false,
               isProRated: true,
-              moveInDate: prop.move_in_date,
+              moveInDate: effectiveMoveInDate,
               moveOutDate: undefined,
               paymentId: manualPay?.id ?? null,
               dueDate: manualPay?.due_date ?? null,
@@ -1814,7 +1839,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
   async function loadAdminProps() {
     setAdminPropsLoading(true)
     setAdminPropsError(null)
-    const { data, error } = await supabase.from('properties').select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, move_in_date, move_out_date, profiles(full_name, email)').order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('properties').select('id, address, postcode, property_type, bedrooms, monthly_rent, is_active, status, created_at, landlord_id, description, photo_urls, has_gas, is_listed, available_from, listing_headline, landlord_registration_number, epc_rating, pre_tenancy_check_completed, pre_tenancy_check_date, deposit_scheme, deposit_registered_date, deposit_amount, meter_certificate_url, move_in_date, move_out_date, key_number, profiles(full_name, email)').order('created_at', { ascending: false })
     if (error) {
       console.error('[AdminDashboard] loadAdminProps error:', error)
       setAdminPropsError(error.message)
@@ -1857,8 +1882,8 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
 
   async function applyMoveIns(props: AdminPropRow[]) {
     const today = new Date().toISOString().slice(0, 10)
-    const toActivate = props.filter(p => p.move_in_date && p.move_in_date <= today)
-    const toVacate = props.filter(p => p.move_out_date && p.move_out_date <= today)
+    const toActivate = props.filter(p => p.move_in_date && p.move_in_date < today)
+    const toVacate = props.filter(p => p.move_out_date && p.move_out_date < today)
     await Promise.all([
       ...toActivate.map(p =>
         supabase.from('properties').update({ status: 'active', is_active: true, move_in_date: null }).eq('id', p.id)
@@ -1867,6 +1892,26 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
         supabase.from('properties').update({ status: 'vacant', is_active: false, move_out_date: null }).eq('id', p.id)
       ),
     ])
+    if (toActivate.length > 0) {
+      await supabase.from('audit_logs').insert(toActivate.map(p => ({
+        action: 'tenant_move_in',
+        entity_type: 'property',
+        entity_id: p.id,
+        user_id: user?.id ?? null,
+        user_role: user?.role ?? 'admin',
+        metadata: { address: p.address, move_in_date: p.move_in_date },
+      })))
+    }
+    if (toVacate.length > 0) {
+      await supabase.from('audit_logs').insert(toVacate.map(p => ({
+        action: 'tenant_move_out',
+        entity_type: 'property',
+        entity_id: p.id,
+        user_id: user?.id ?? null,
+        user_role: user?.role ?? 'admin',
+        metadata: { address: p.address, move_out_date: p.move_out_date },
+      })))
+    }
     if (toActivate.length > 0 || toVacate.length > 0) {
       setAdminProps(prev => prev.map(p => {
         if (toActivate.some(t => t.id === p.id)) return { ...p, status: 'active' as PropStatus, is_active: true, move_in_date: null }
@@ -1878,7 +1923,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
 
   async function applyMoveOuts(notices: TenancyNotice[]) {
     const today = new Date().toISOString().slice(0, 10)
-    const toVacate = notices.filter(n => n.vacate_date && n.vacate_date <= today)
+    const toVacate = notices.filter(n => n.vacate_date && n.vacate_date < today)
     if (toVacate.length === 0) return
     await Promise.all([
       ...toVacate.map(n =>
@@ -1891,6 +1936,14 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
         supabase.from('tenancy_notices').update({ status: 'completed' }).eq('id', n.id)
       ),
     ])
+    await supabase.from('audit_logs').insert(toVacate.map(n => ({
+      action: 'tenant_move_out',
+      entity_type: 'property',
+      entity_id: n.property_id,
+      user_id: user?.id ?? null,
+      user_role: user?.role ?? 'admin',
+      metadata: { address: n.properties?.address ?? null, vacate_date: n.vacate_date, tenancy_id: n.tenancy_id },
+    })))
     setTenancyNotices(prev => prev.filter(n => !toVacate.some(t => t.id === n.id)))
     setAdminProps(prev => prev.map(p => {
       const notice = toVacate.find(n => n.property_id === p.id)
@@ -1898,13 +1951,50 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     }))
   }
 
-  function toggleTodoCheck(itemId: string, idx: number) {
+  async function toggleTodoCheck(itemId: string, idx: number, checklistLength: number) {
     const current = todoChecks[itemId] ?? []
     const next = [...current]
     next[idx] = !next[idx]
-    const updated = { ...todoChecks, [itemId]: next }
-    setTodoChecks(updated)
-    try { localStorage.setItem('aurelius-todo-checks', JSON.stringify(updated)) } catch { /* ignore */ }
+    const updatedChecks = { ...todoChecks, [itemId]: next }
+    setTodoChecks(updatedChecks)
+    try { localStorage.setItem('aurelius-todo-checks', JSON.stringify(updatedChecks)) } catch { /* ignore */ }
+
+    // When all checklist items are checked, remove from sticky todos
+    const allDoneNow = next.filter(Boolean).length === checklistLength
+    if (allDoneNow) {
+      const { [itemId]: _removed, ...rest } = stickyTodos
+      setStickyTodos(rest)
+      try { localStorage.setItem('aurelius-sticky-todos', JSON.stringify(rest)) } catch { /* ignore */ }
+    }
+
+    // Key handover items trigger property status changes the moment they are ticked
+    if (next[idx]) {
+      if (itemId.startsWith('movein-') && TODO_CHECKLISTS['Move In']?.[idx]?.label === 'Keys issued to tenant') {
+        const propertyId = itemId.slice('movein-'.length)
+        await supabase.from('properties').update({ status: 'active', is_active: true, move_in_date: null }).eq('id', propertyId)
+        setAdminProps(prev => prev.map(p => p.id === propertyId ? { ...p, status: 'active' as PropStatus, is_active: true, move_in_date: null } : p))
+        await supabase.from('audit_logs').insert({
+          action: 'tenant_move_in',
+          entity_type: 'property',
+          entity_id: propertyId,
+          user_id: user?.id ?? null,
+          user_role: user?.role ?? 'admin',
+          metadata: { address: adminProps.find(p => p.id === propertyId)?.address ?? null, trigger: 'keys_issued' },
+        })
+      } else if (itemId.startsWith('moveout-') && TODO_CHECKLISTS['Move Out']?.[idx]?.label === 'Keys returned from tenant') {
+        const propertyId = itemId.slice('moveout-'.length)
+        await supabase.from('properties').update({ status: 'vacant', is_active: false, move_out_date: null }).eq('id', propertyId)
+        setAdminProps(prev => prev.map(p => p.id === propertyId ? { ...p, status: 'vacant' as PropStatus, is_active: false, move_out_date: null } : p))
+        await supabase.from('audit_logs').insert({
+          action: 'tenant_move_out',
+          entity_type: 'property',
+          entity_id: propertyId,
+          user_id: user?.id ?? null,
+          user_role: user?.role ?? 'admin',
+          metadata: { address: adminProps.find(p => p.id === propertyId)?.address ?? null, trigger: 'keys_returned' },
+        })
+      }
+    }
   }
 
   async function acknowledgeNotice(noticeId: string, propertyId: string) {
@@ -1915,7 +2005,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     if (prop) { setSelectedProperty(prop); setTab('properties') }
   }
 
-  async function sendViewingEmail(type: 'confirmed' | 'received' | 'cancelled', req: ViewingRequest) {
+  async function sendViewingEmail(type: 'confirmed' | 'received' | 'cancelled' | 'tenant_found', req: ViewingRequest, moveInDate?: string) {
     if (!req.email) return
     await supabase.functions.invoke('send-viewing-email', {
       body: {
@@ -1927,23 +2017,30 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
           date: req.preferred_date,
           time: req.preferred_time,
         },
+        ...(moveInDate ? { moveInDate } : {}),
       },
     })
   }
 
-  async function cancelFutureViewings(propertyId: string) {
+  async function cancelFutureViewings(propertyId: string, moveInDate?: string) {
     const today = new Date().toISOString().slice(0, 10)
     const toCancel = viewingRequests.filter(
       r => r.property_id === propertyId &&
       r.preferred_date >= today &&
       (r.status === 'pending' || r.status === 'confirmed')
     )
+    // Always delist the property when called from a tenancy trigger
+    if (moveInDate !== undefined) {
+      await supabase.from('properties').update({ is_listed: false }).eq('id', propertyId)
+      setAdminProps(prev => prev.map(p => p.id === propertyId ? { ...p, is_listed: false } : p))
+      if (selectedProperty?.id === propertyId) setSelectedProperty(prev => prev ? { ...prev, is_listed: false } : prev)
+    }
     if (toCancel.length === 0) return
     const ids = toCancel.map(r => r.id)
     await supabase.from('viewing_requests').update({ status: 'cancelled' }).in('id', ids)
     setViewingRequests(prev => prev.map(r => ids.includes(r.id) ? { ...r, status: 'cancelled' } : r))
     for (const req of toCancel) {
-      sendViewingEmail('cancelled', req)
+      sendViewingEmail(moveInDate !== undefined ? 'tenant_found' : 'cancelled', req, moveInDate)
     }
   }
 
@@ -2229,6 +2326,23 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     }
   }
 
+  async function markPhysicallyChecked(certLabel: string) {
+    if (!selectedProperty) return
+    setConfirmingPhysicalCheck(certLabel)
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: newItem, error } = await supabase.from('compliance_items').insert({
+      property_id: selectedProperty.id,
+      type: certLabel,
+      issue_date: today,
+      expiry_date: null,
+      document_url: null,
+      notes: null,
+    }).select('id, property_id, type, issue_date, expiry_date, status, document_url, notes, uploaded_at, pdf_url, cleanliness_comment, odour_comment, heat_detector_present, smoke_detector_present, co_detector_present').single()
+    setConfirmingPhysicalCheck(null)
+    if (error) { console.error('markPhysicallyChecked:', error); return }
+    setComplianceItems(prev => [...prev, newItem as ComplianceItem])
+  }
+
   async function handleListingToggle(newIsListed: boolean) {
     if (!selectedProperty) return
     if (newIsListed && !listingRegNumber.trim()) {
@@ -2413,12 +2527,11 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
   const totalCollected = filteredSnaps.reduce((s, r) => s + r.rentCollected, 0)
   const totalMaintenance = filteredSnaps.reduce((s, r) => s + r.maintenanceCost, 0)
   const totalMgmtFee = filteredSnaps.reduce((s, r) => s + r.managementFee, 0)
-  // rentExpected in each snapshot already excludes months before a tenancy started,
-  // so this ratio accurately reflects collection against rent actually due.
-  const tenantedExpectedTotal = filteredSnaps.reduce((s, r) => s + r.rentExpected, 0)
-  const tenantedCollectionRate = tenantedExpectedTotal > 0
-    ? Math.min((totalCollected / tenantedExpectedTotal) * 100, 100)
-    : null
+  // Collection rate: use live current-month rent data (same source as the Dashboard KPI)
+  const _collRows = rentCollection.filter(r => !r.isVacant)
+  const _collExp = _collRows.reduce((s, r) => s + r.expected, 0)
+  const _collColl = _collRows.reduce((s, r) => s + Math.min(r.collected, r.expected), 0)
+  const tenantedCollectionRate = _collExp > 0 ? Math.min((_collColl / _collExp) * 100, 100) : null
 
   const filteredUsers = users.filter((u) => {
     const matchRole = userFilter === 'all' || u.role === userFilter
@@ -2516,11 +2629,15 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     setTimeout(() => w.print(), 400)
   }
 
-  const daysUntilDate = (d: string) => Math.ceil((new Date(d + 'T12:00:00').getTime() - Date.now()) / 86400000)
+  const daysUntilDate = (d: string) => {
+    const todayMs = new Date().setHours(0, 0, 0, 0)
+    const targetMs = new Date(d + 'T00:00:00').setHours(0, 0, 0, 0)
+    return Math.round((targetMs - todayMs) / 86400000)
+  }
   const daysLabel = (days: number) => days === 0 ? 'today' : days === 1 ? 'tomorrow' : days < 0 ? `${Math.abs(days)} days ago` : `in ${days} days`
 
   interface TodoItem { id: string; priority: 'urgent' | 'soon' | 'info'; category: string; title: string; detail: string; action?: () => void; actionLabel?: string }
-  const todoItems: TodoItem[] = [
+  const liveTodoItems: TodoItem[] = [
     ...adminProps.filter(p => p.move_in_date).map(p => {
       const days = daysUntilDate(p.move_in_date!)
       return { id: `movein-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move In', title: p.address, detail: `Tenant moving in ${daysLabel(days)} — ${fmtDate(p.move_in_date!)}`, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
@@ -2543,6 +2660,37 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
       const days = c.expiry_date ? daysUntilDate(c.expiry_date) : -999
       return { id: `cert-${c.id}`, priority: (days < 0 ? 'urgent' : days <= 30 ? 'soon' : 'info') as TodoItem['priority'], category: 'Certificate', title: c.properties?.address ?? 'Unknown property', detail: `${c.type} ${days < 0 ? `expired ${Math.abs(days)} days ago` : `expiring ${daysLabel(days)}`}`, action: () => { setTab('maintenance'); setMaintenanceFilter('compliance') }, actionLabel: 'View' }
     }),
+  ]
+
+  // Upsert live items that have a checklist into stickyTodos so they survive status changes.
+  // Do this as a side effect outside render (safe: only runs when live list changes).
+  const nextSticky = { ...stickyTodos }
+  let stickyChanged = false
+  for (const item of liveTodoItems) {
+    if (TODO_CHECKLISTS[item.category] && !nextSticky[item.id]) {
+      nextSticky[item.id] = { id: item.id, priority: item.priority, category: item.category, title: item.title, detail: item.detail }
+      stickyChanged = true
+    }
+  }
+  if (stickyChanged) {
+    setStickyTodos(nextSticky)
+    try { localStorage.setItem('aurelius-sticky-todos', JSON.stringify(nextSticky)) } catch { /* ignore */ }
+  }
+
+  // Merge: live items take precedence; append sticky items not in live list (not yet fully checked)
+  const liveItemIds = new Set(liveTodoItems.map(i => i.id))
+  const stickyOnlyItems: TodoItem[] = Object.values(nextSticky)
+    .filter(s => !liveItemIds.has(s.id))
+    .filter(s => {
+      const checklist = TODO_CHECKLISTS[s.category] ?? []
+      const checks = todoChecks[s.id] ?? []
+      return checklist.length === 0 || checks.filter(Boolean).length < checklist.length
+    })
+    .map(s => ({ ...s }))
+
+  const todoItems: TodoItem[] = [
+    ...liveTodoItems,
+    ...stickyOnlyItems,
   ].sort((a, b) => ({ urgent: 0, soon: 1, info: 2 }[a.priority]) - ({ urgent: 0, soon: 1, info: 2 }[b.priority]))
 
   const todoUrgentCount = todoItems.filter(i => i.priority === 'urgent').length
@@ -2620,13 +2768,24 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                         {checklist.map((task, idx) => {
                           const checked = checks[idx] ?? false
+                          const taskPriority = task.priority
+                          const taskBadge = taskPriority === 'urgent'
+                            ? { color: '#f87171', bg: 'rgba(248,113,113,0.12)' }
+                            : taskPriority === 'soon'
+                            ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' }
+                            : { color: '#60a5fa', bg: 'rgba(96,165,250,0.1)' }
                           return (
-                            <button key={idx} type="button" onClick={() => toggleTodoCheck(item.id, idx)}
+                            <button key={idx} type="button" onClick={() => toggleTodoCheck(item.id, idx, checklist.length)}
                               style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '9px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: idx < checklist.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                               <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, marginTop: 1, border: `1.5px solid ${checked ? '#4ade80' : 'rgba(255,255,255,0.2)'}`, background: checked ? 'rgba(74,222,128,0.15)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="#4ade80"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>}
                               </div>
-                              <span style={{ fontSize: 12, color: checked ? '#4ade80' : '#c8d4e0', lineHeight: 1.5, textDecoration: checked ? 'line-through' : 'none', opacity: checked ? 0.7 : 1 }}>{task}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: 12, color: checked ? '#4ade80' : '#c8d4e0', lineHeight: 1.5, textDecoration: checked ? 'line-through' : 'none', opacity: checked ? 0.7 : 1 }}>{task.label}</span>
+                                {!checked && (
+                                  <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '1px 5px', borderRadius: 3, background: taskBadge.bg, color: taskBadge.color }}>{taskPriority}</span>
+                                )}
+                              </div>
                             </button>
                           )
                         })}
@@ -2791,7 +2950,8 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 <DarkKPI title="Collected" value={coll > 0 ? gbp(coll) : '—'} accent="#4ade80" subtitle="This month" />
                 <DarkKPI title="Rent Due" value={outstanding > 0 ? gbp(outstanding, 2) : '—'} accent="#fbbf24" subtitle="Outstanding this month" />
                 <DarkKPI title="Management Fee" value={gbp(monthlyMgmtFee)} accent="#4ade80" subtitle="Collected this month" />
-                <DarkKPI title="Maintenance" value={gbp(monthlyRepairDeductions)} accent="#fbbf24" subtitle="Deducted this month" />
+                <DarkKPI title="In-House" value={gbp(monthlyInHouseCost)} accent="#fbbf24" subtitle="Deductions this month" />
+                <DarkKPI title="Maintenance Cost" value={gbp(monthlyMaintCost)} accent="#fbbf24" subtitle="Repairs this month" />
               </div>
             )
           })()}
@@ -2977,14 +3137,18 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                             <>
                               <div style={{ textAlign: 'right' }}>
                                 <p style={{ fontSize: 14, fontFamily: 'Georgia, serif', color: row.isPaid ? '#4ade80' : '#fbbf24' }}>
-                                  {row.isProRated ? gbp(row.expected, 2) : row.isPaid ? gbp(row.collected) : gbp(row.expected)}
+                                  {row.isProRated
+                                    ? row.moveInDate
+                                      ? gbp(row.expected, 2)
+                                      : row.isPaid ? gbp(row.collected) : gbp(row.expected, 2)
+                                    : row.isPaid ? gbp(row.collected) : gbp(row.expected)}
                                 </p>
                                 {!row.isPaid && <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>due</p>}
                               </div>
                               {!row.isPaid && (
                                 row.tenancyId
                                   ? <button type="button"
-                                      onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate, landlordEmail: row.landlordEmail, landlordName: row.landlordName })}
+                                      onClick={() => setMarkPaidItem({ tenancyId: row.tenancyId, propertyId: row.propertyId, address: row.address, expected: row.expected, paymentId: row.paymentId, dueDate: row.dueDate, landlordEmail: row.landlordEmail, landlordName: row.landlordName })}
                                       style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                       Mark Paid
                                     </button>
@@ -3012,6 +3176,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
       {markPaidItem && (
         <MarkPaidModal
           tenancyId={markPaidItem.tenancyId}
+          propertyId={markPaidItem.propertyId}
           address={markPaidItem.address}
           expected={markPaidItem.expected}
           paymentId={markPaidItem.paymentId}
@@ -3846,6 +4011,8 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
               { key: 'eicr', label: 'EICR (Electrical)', hint: 'Every 5 years', canMark: false },
               { key: 'epc', label: 'EPC', hint: '10-year validity — required on all adverts', canMark: false },
               { key: 'legionella', label: 'Legionella Risk Assessment', hint: 'Legally required — duty of care', canMark: false },
+              { key: 'smoke', label: 'Smoke & CO Alarms', hint: 'Physical check — no PDF required', canMark: true },
+              { key: 'heat', label: 'Heat Alarms', hint: 'Required in every kitchen — HATISS', canMark: true },
             ]
             const now = new Date()
             const statuses = requiredCerts.map(cert => {
@@ -3878,12 +4045,22 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                           <span style={{ fontSize: 12, color: '#e8edf5' }}>{cert.label}</span>
                           <span style={{ fontSize: 10, color: '#8899aa', marginLeft: 6 }}>{cert.hint}</span>
                         </div>
-                        <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{label}</span>
+                        {cert.canMark && cert.status === 'missing' ? (
+                          <button
+                            type="button"
+                            disabled={confirmingPhysicalCheck === cert.key}
+                            onClick={() => markPhysicallyChecked(cert.label)}
+                            style={{ fontSize: 10, fontWeight: 600, padding: '2px 10px', borderRadius: 4, background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            {confirmingPhysicalCheck === cert.key ? 'Saving…' : 'Confirm Checked'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{label}</span>
+                        )}
                       </div>
                     )
                   })}
                 </div>
-                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, lineHeight: 1.4 }}>Use "+ Add" in the Compliance Certificates section below to upload these documents.</p>
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, lineHeight: 1.4 }}>Use "+ Add" in the Compliance Certificates section below to upload documents. Physical checks can be confirmed directly above.</p>
               </div>
             )
           })()}
@@ -4252,9 +4429,9 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 {propertyKeys.map((k) => {
                   const isOut = !!k.holder_name
                   const label = k.key_type === 'master' ? 'Master Key' : k.key_type === 'tenant' ? 'Tenant Key' : 'Contractor Key'
-                  const isReturning = returnConfirmKey === k.key_type
+                  const isReturning = returnConfirmKey === k.id
                   return (
-                    <div key={k.key_type} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
+                    <div key={k.id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 34, height: 34, borderRadius: 8, background: isOut ? 'rgba(251,191,36,0.12)' : 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill={isOut ? '#fbbf24' : '#4ade80'}><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
@@ -4272,7 +4449,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                         {isOut ? (
                           isReturning ? (
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                              <button type="button" onClick={() => handleReturnKey(k.key_type)}
+                              <button type="button" onClick={() => handleReturnKey(k.id)}
                                 style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)', cursor: 'pointer', fontWeight: 500 }}>
                                 Confirm
                               </button>
@@ -4282,13 +4459,13 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                               </button>
                             </div>
                           ) : (
-                            <button type="button" onClick={() => setReturnConfirmKey(k.key_type)}
+                            <button type="button" onClick={() => setReturnConfirmKey(k.id)}
                               style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', flexShrink: 0 }}>
                               Return
                             </button>
                           )
                         ) : (
-                          <button type="button" onClick={() => { setCheckOutKeyType(k.key_type); setCheckOutName(''); setCheckOutRole(''); setCheckOutNotes('') }}
+                          <button type="button" onClick={() => { setCheckOutKeyType(k.id); setCheckOutName(''); setCheckOutRole(''); setCheckOutNotes('') }}
                             style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, background: '#e8edf5', color: '#0d1b2e', border: 'none', cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
                             Check Out
                           </button>
@@ -4395,7 +4572,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 <>
                   <div style={{ display: 'flex', gap: 8, marginBottom: meterReadings.length > 0 ? 16 : 0 }}>
                     {METERS.map(({ type, label, unit, icon }) => {
-                      const latest = meterReadings.find(r => r.meter_type === type)
+                      const latest = meterReadings.find(r => r.utility_type === type)
                       return (
                         <div key={type} style={{ flex: 1, background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 10px', textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>{icon}</div>
@@ -4403,7 +4580,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                           {latest ? (
                             <>
                               <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif', fontWeight: 300, lineHeight: 1 }}>
-                                {Number(latest.reading).toLocaleString('en-GB')}
+                                {latest.reading_raw ?? Number(latest.reading).toLocaleString('en-GB')}
                               </p>
                               <p style={{ fontSize: 9, color: '#8899aa', marginTop: 2 }}>{unit}</p>
                               <p style={{ fontSize: 10, color: '#8899aa', marginTop: 4 }}>{fmtDate(latest.reading_date)}</p>
@@ -4419,15 +4596,15 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
                       <p style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 10 }}>Reading History</p>
                       {meterReadings.slice(0, 12).map((r) => {
-                        const meta = r.meter_type === 'electricity' ? { label: 'Electricity', unit: 'kWh', color: '#fbbf24' }
-                          : r.meter_type === 'gas' ? { label: 'Gas', unit: 'm³', color: '#60a5fa' }
+                        const meta = r.utility_type === 'electricity' ? { label: 'Electricity', unit: 'kWh', color: '#fbbf24' }
+                          : r.utility_type === 'gas' ? { label: 'Gas', unit: 'm³', color: '#60a5fa' }
                           : { label: 'Water', unit: 'm³', color: '#4ade80' }
                         return (
                           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10 }}>
                             <div style={{ width: 6, height: 6, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <p style={{ fontSize: 12, color: '#e8edf5' }}>
-                                {meta.label} — {Number(r.reading).toLocaleString('en-GB')} {meta.unit}
+                                {meta.label} — {r.reading_raw ?? Number(r.reading).toLocaleString('en-GB')} {meta.unit}
                               </p>
                               {r.notes && <p style={{ fontSize: 11, color: '#8899aa', marginTop: 1 }}>{r.notes}</p>}
                             </div>
@@ -5323,8 +5500,11 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
           landlords={landlordUsers}
           onClose={() => setEditProperty(null)}
           onSaved={(patch) => {
-            if (editProperty.status !== 'tenanted' && patch.status === 'tenanted') {
-              cancelFutureViewings(editProperty.id)
+            const wasNotLet = editProperty.status !== 'tenanted' && editProperty.status !== 'moving_in' && editProperty.status !== 'active'
+            const isNowLet = patch.status === 'tenanted' || patch.status === 'moving_in' || patch.status === 'active'
+            const moveInDateAdded = !!(patch.move_in_date && !editProperty.move_in_date)
+            if ((wasNotLet && isNowLet) || moveInDateAdded) {
+              cancelFutureViewings(editProperty.id, patch.move_in_date ?? undefined)
             }
             setAdminProps(prev => prev.map(p => p.id === editProperty.id ? { ...p, ...patch } : p))
             setEditProperty(null)
@@ -5744,7 +5924,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8899aa', display: 'block', marginBottom: 6 }}>
                   Reading ({newMeterType === 'electricity' ? 'kWh' : 'm³'}) *
                 </label>
-                <input type="number" value={newMeterReading} onChange={(e) => setNewMeterReading(e.target.value)} placeholder="e.g. 12345"
+                <input type="text" value={newMeterReading} onChange={(e) => setNewMeterReading(e.target.value)} placeholder="e.g. 12345 or 10994/09"
                   style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }} />
               </div>
               <div>
@@ -5757,6 +5937,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 <input value={newMeterNotes} onChange={(e) => setNewMeterNotes(e.target.value)} placeholder="Optional…"
                   style={{ width: '100%', background: '#0f1e35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8edf5', outline: 'none', boxSizing: 'border-box' }} />
               </div>
+              {meterError && <p style={{ fontSize: 12, color: '#f87171', margin: '0 0 4px' }}>{meterError}</p>}
               <button type="button" onClick={handleAddMeterReading} disabled={!newMeterReading.trim() || meterSaving}
                 style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: !newMeterReading.trim() || meterSaving ? 'rgba(232,237,245,0.3)' : '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 14, fontWeight: 600, cursor: !newMeterReading.trim() || meterSaving ? 'default' : 'pointer' }}>
                 {meterSaving ? 'Saving…' : 'Save Reading'}
@@ -5772,7 +5953,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
           <div style={{ background: '#112240', borderRadius: '20px 20px 0 0', padding: '24px 20px 36px', maxHeight: '80vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>
-                Check Out {checkOutKeyType === 'master' ? 'Master' : checkOutKeyType === 'tenant' ? 'Tenant' : 'Contractor'} Key
+                Check Out {(() => { const t = propertyKeys.find(k => k.id === checkOutKeyType)?.key_type ?? ''; return t === 'master' ? 'Master' : t === 'tenant' ? 'Tenant' : t === 'contractor' ? 'Contractor' : t.charAt(0).toUpperCase() + t.slice(1) })() } Key
               </p>
               <button type="button" onClick={() => setCheckOutKeyType(null)}
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, width: 32, height: 32, color: '#8899aa', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -6043,8 +6224,9 @@ function DateInput({ value, onChange, style }: { value: string; onChange: (iso: 
   )
 }
 
-function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landlordEmail, landlordName, adminId, adminRole, onClose, onSaved }: {
+function MarkPaidModal({ tenancyId, propertyId, address, expected, paymentId, dueDate, landlordEmail, landlordName, adminId, adminRole, onClose, onSaved }: {
   tenancyId: string
+  propertyId: string
   address: string
   expected: number
   paymentId: string | null
@@ -6113,6 +6295,65 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landl
       },
     })
 
+    // Fetch landlord_id and pending deductions for statement generation
+    const [{ data: propData }, { data: mrData }] = await Promise.all([
+      supabase.from('properties').select('landlord_id').eq('id', propertyId).single(),
+      supabase.from('maintenance_requests').select('id').eq('property_id', propertyId),
+    ])
+    const landlordId = (propData as { landlord_id: string } | null)?.landlord_id ?? null
+    const mrIds = (mrData ?? []).map((r: { id: string }) => r.id)
+
+    let deductionsTotal = 0
+    if (mrIds.length > 0) {
+      const { data: dedData } = await supabase.from('contractor_invoices')
+        .select('total')
+        .in('maintenance_request_id', mrIds)
+        .is('deducted_at', null)
+        .eq('deduction_queued', true)
+      deductionsTotal = ((dedData ?? []) as { total: number }[]).reduce((s, r) => s + Number(r.total ?? 0), 0)
+
+      // Mark them as applied (deduction_rent_payment_id is Stripe-only FK — leave null for manual)
+      await supabase.from('contractor_invoices')
+        .update({ deducted_at: new Date().toISOString() })
+        .in('maintenance_request_id', mrIds)
+        .is('deducted_at', null)
+        .eq('deduction_queued', true)
+    }
+
+    // Upsert monthly statement — update existing for this property+period if one exists
+    const grossAmt = parseFloat(amount)
+    const netAmt = grossAmt - deductionsTotal
+    if (landlordId) {
+      const { data: existingStmt } = await supabase
+        .from('statements')
+        .select('id')
+        .eq('property_id', propertyId)
+        .eq('period', defaultDueDate)
+        .maybeSingle()
+      if (existingStmt) {
+        await supabase.from('statements').update({
+          gross_amount: grossAmt,
+          management_fee: 0,
+          deductions: deductionsTotal,
+          net_amount: netAmt,
+          status: 'paid',
+          notes: notes || null,
+        }).eq('id', (existingStmt as { id: string }).id)
+      } else {
+        await supabase.from('statements').insert({
+          landlord_id: landlordId,
+          property_id: propertyId,
+          period: defaultDueDate,
+          gross_amount: grossAmt,
+          management_fee: 0,
+          deductions: deductionsTotal,
+          net_amount: netAmt,
+          status: 'paid',
+          notes: notes || null,
+        })
+      }
+    }
+
     // Fire-and-forget — email failure should never block the UI
     if (landlordEmail) {
       supabase.functions.invoke('send-rent-paid-email', {
@@ -6121,6 +6362,8 @@ function MarkPaidModal({ tenancyId, address, expected, paymentId, dueDate, landl
           landlordName,
           propertyAddress: address,
           amount: parseFloat(amount),
+          deductions: deductionsTotal,
+          netAmount: netAmt,
           paidDate,
           paymentMethod: method,
         },
@@ -6176,36 +6419,84 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
 }) {
   const linkedIds = new Set(currentTenants.map(t => t.tenant_id))
   const availableTenants = tenants.filter(t => !linkedIds.has(t.id))
-  const [tenantId, setTenantId] = useState('')
+
+  const [mode, setMode] = useState<'existing' | 'invite'>('invite')
+
+  // Shared fields
   const [startDate, setStartDate] = useState('')
   const [rent, setRent] = useState(String(property.monthly_rent ?? ''))
   const [deposit, setDeposit] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!tenantId) { setError('Please select a tenant'); return }
-    if (!startDate) { setError('Start date is required'); return }
-    if (!rent) { setError('Monthly rent is required'); return }
-    if (linkedIds.has(tenantId)) { setError('This tenant is already linked to this property'); return }
-    setSaving(true); setError(null)
-    const monthlyRent = parseFloat(rent)
+  // Existing tenant
+  const [tenantId, setTenantId] = useState('')
+
+  // New tenant invite
+  const [inviteName, setInviteName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+
+  async function createTenancy(resolvedTenantId: string, monthlyRent: number) {
     const { error: dbError } = await supabase.from('tenancies').insert({
       property_id: property.id,
-      tenant_id: tenantId,
+      tenant_id: resolvedTenantId,
       start_date: startDate,
       monthly_rent: monthlyRent,
       deposit: deposit ? parseFloat(deposit) : 0,
       status: 'active',
       is_current: true,
     })
-    if (dbError) { setSaving(false); setError(dbError.message); return }
-    // Mark property as active and sync monthly_rent when a tenant is formally linked
+    if (dbError) throw new Error(dbError.message)
     await supabase.from('properties').update({ status: 'active', monthly_rent: monthlyRent }).eq('id', property.id)
-    setSaving(false)
-    onSaved(); onClose()
   }
+
+  async function handleLinkExisting(e: React.FormEvent) {
+    e.preventDefault()
+    if (!tenantId) { setError('Please select a tenant'); return }
+    if (!startDate) { setError('Start date is required'); return }
+    if (!rent) { setError('Monthly rent is required'); return }
+    setSaving(true); setError(null)
+    try {
+      await createTenancy(tenantId, parseFloat(rent))
+      onSaved(); onClose()
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err))
+      setSaving(false)
+    }
+  }
+
+  async function handleInviteAndLink(e: React.FormEvent) {
+    e.preventDefault()
+    if (!inviteEmail.trim()) { setError('Email is required'); return }
+    if (!startDate) { setError('Start date is required'); return }
+    if (!rent) { setError('Monthly rent is required'); return }
+    setSaving(true); setError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ?? ''
+      const res = await supabase.functions.invoke('send-invite', {
+        body: { email: inviteEmail.trim(), role: 'tenant', name: inviteName.trim() || undefined },
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.error || res.data?.ok === false) throw new Error(res.data?.error ?? res.error?.message ?? 'Invite failed')
+      const newUserId: string = res.data.userId
+      await createTenancy(newUserId, parseFloat(rent))
+      setSuccess(`Invite sent to ${inviteEmail.trim()}. They'll receive an email to set up their account.`)
+      setSaving(false)
+      setTimeout(() => { onSaved(); onClose() }, 2200)
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err))
+      setSaving(false)
+    }
+  }
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: '8px 0', fontSize: 12, fontWeight: active ? 600 : 400,
+    borderRadius: 7, border: 'none', cursor: 'pointer',
+    background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+    color: active ? '#e8edf5' : '#8899aa',
+  })
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '0 16px' }}>
@@ -6214,9 +6505,10 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
           <p style={{ fontSize: 16, color: '#e8edf5', fontFamily: 'Georgia, serif' }}>Add Tenant</p>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8899aa', padding: 4, cursor: 'pointer', fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
-        <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 18 }} className="truncate">{property.address}</p>
+        <p style={{ fontSize: 12, color: '#8899aa', marginBottom: 14 }} className="truncate">{property.address}</p>
+
         {currentTenants.length > 0 && (
-          <div style={{ marginBottom: 18 }}>
+          <div style={{ marginBottom: 16 }}>
             <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', marginBottom: 8 }}>Currently Linked</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {currentTenants.map(t => (
@@ -6228,34 +6520,73 @@ function LinkTenantModal({ property, tenants, currentTenants, onClose, onSaved }
             </div>
           </div>
         )}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <FormField label="Tenant *">
-            <select value={tenantId} onChange={e => setTenantId(e.target.value)} style={INPUT_STYLE}>
-              <option value="">Select tenant</option>
-              {availableTenants.map(t => <option key={t.id} value={t.id}>{t.full_name ?? t.email}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Start Date *">
-            <DateInput value={startDate} onChange={setStartDate} style={INPUT_STYLE} />
-          </FormField>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <FormField label="Monthly Rent (£) *">
-              <input type="number" value={rent} onChange={e => setRent(e.target.value)} placeholder="1200" min="0" style={INPUT_STYLE} />
-            </FormField>
-            <FormField label="Deposit (£)">
-              <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="2400" min="0" style={INPUT_STYLE} />
-            </FormField>
+
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 4, marginBottom: 18 }}>
+          <button type="button" style={tabStyle(mode === 'invite')} onClick={() => { setMode('invite'); setError(null) }}>Invite New Tenant</button>
+          <button type="button" style={tabStyle(mode === 'existing')} onClick={() => { setMode('existing'); setError(null) }}>Link Existing Account</button>
+        </div>
+
+        {success ? (
+          <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', fontSize: 13, color: '#4ade80', textAlign: 'center', lineHeight: 1.5 }}>
+            {success}
           </div>
-          {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
-          {availableTenants.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>All registered tenants are already linked to this property.</p>
-          ) : (
+        ) : mode === 'invite' ? (
+          <form onSubmit={handleInviteAndLink} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <FormField label="Full Name">
+              <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="Jane Smith" style={INPUT_STYLE} />
+            </FormField>
+            <FormField label="Email Address *">
+              <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="tenant@email.com" style={INPUT_STYLE} />
+            </FormField>
+            <FormField label="Tenancy Start Date *">
+              <DateInput value={startDate} onChange={setStartDate} style={INPUT_STYLE} />
+            </FormField>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <FormField label="Monthly Rent (£) *">
+                <input type="number" value={rent} onChange={e => setRent(e.target.value)} placeholder="1200" min="0" style={INPUT_STYLE} />
+              </FormField>
+              <FormField label="Deposit (£)">
+                <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="2400" min="0" style={INPUT_STYLE} />
+              </FormField>
+            </div>
+            {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
             <button type="submit" disabled={saving}
               style={{ padding: '12px 0', borderRadius: 8, background: saving ? 'rgba(232,237,245,0.4)' : '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 13, fontWeight: 600, marginTop: 4 }}>
-              {saving ? 'Linking…' : 'Link Tenant'}
+              {saving ? 'Sending invite…' : 'Invite & Link Tenant'}
             </button>
-          )}
-        </form>
+            <p style={{ fontSize: 11, color: '#8899aa', textAlign: 'center', marginTop: -6 }}>The tenant will receive an email to set up their account.</p>
+          </form>
+        ) : (
+          <form onSubmit={handleLinkExisting} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <FormField label="Tenant *">
+              <select value={tenantId} onChange={e => setTenantId(e.target.value)} style={INPUT_STYLE}>
+                <option value="">Select tenant</option>
+                {availableTenants.map(t => <option key={t.id} value={t.id}>{t.full_name ?? t.email}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Start Date *">
+              <DateInput value={startDate} onChange={setStartDate} style={INPUT_STYLE} />
+            </FormField>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <FormField label="Monthly Rent (£) *">
+                <input type="number" value={rent} onChange={e => setRent(e.target.value)} placeholder="1200" min="0" style={INPUT_STYLE} />
+              </FormField>
+              <FormField label="Deposit (£)">
+                <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="2400" min="0" style={INPUT_STYLE} />
+              </FormField>
+            </div>
+            {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
+            {availableTenants.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No existing tenant accounts available. Use "Invite New Tenant" above.</p>
+            ) : (
+              <button type="submit" disabled={saving}
+                style={{ padding: '12px 0', borderRadius: 8, background: saving ? 'rgba(232,237,245,0.4)' : '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 13, fontWeight: 600, marginTop: 4 }}>
+                {saving ? 'Linking…' : 'Link Tenant'}
+              </button>
+            )}
+          </form>
+        )}
       </div>
     </div>
   )
@@ -6356,8 +6687,10 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
     'Gas Safety Certificate',
     'Electrical Installation Condition Report (EICR)',
     'Energy Performance Certificate (EPC)',
-    'PAT Testing',
     'Legionella Risk Assessment',
+    'Smoke & CO Alarms',
+    'Heat Alarms',
+    'PAT Testing',
     'Fire Safety Check',
     'Portable Appliance Testing',
     'Other',
@@ -8525,6 +8858,8 @@ const CERT_TYPES = [
   'EICR',
   'EPC',
   'Legionella Risk Assessment',
+  'Smoke & CO Alarms',
+  'Heat Alarms',
   'PAT Testing',
   'Fire Risk Assessment',
   'HMO Licence',

@@ -101,6 +101,25 @@ function cancelledEmail(v: ViewingPayload) {
   }
 }
 
+function tenantFoundEmail(v: ViewingPayload, moveInDate?: string) {
+  const dateDetail = moveInDate
+    ? `<p>The agreed date of entry is <strong style="color:#0d1b3e">${fmtDate(moveInDate)}</strong>.</p>`
+    : ''
+  return {
+    subject: `Property Tenanted — ${esc(v.address)}`,
+    html: emailBase(`
+      <h2>Property Tenanted</h2>
+      <p>Hi ${esc(v.name)},</p>
+      <p>We're writing to let you know that a tenant has been found for <strong style="color:#0d1b3e">${esc(v.address)}</strong>.</p>
+      ${dateDetail}
+      <p>As a result, your viewing scheduled for ${fmtDate(v.date)} at ${esc(v.time)} has been cancelled.</p>
+      <p>We're sorry for any inconvenience. Please take a look at our other available properties — we may have something that suits you.</p>
+      <a href="${LISTINGS_URL}" class="btn">View Available Properties</a>
+      <p style="margin-top:20px">If you have any questions, reply to this email or contact us at <a href="mailto:${REPLY_TO}" style="color:#0d1b3e">${REPLY_TO}</a>.</p>
+    `),
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } })
@@ -114,12 +133,13 @@ serve(async (req) => {
   }
 
   try {
-    const { type, viewing } = await req.json() as { type: 'confirmed' | 'received' | 'cancelled'; viewing: ViewingPayload }
+    const { type, viewing, moveInDate } = await req.json() as { type: 'confirmed' | 'received' | 'cancelled' | 'tenant_found'; viewing: ViewingPayload; moveInDate?: string }
 
     if (!viewing?.email) return new Response(JSON.stringify({ ok: false, error: 'no email' }), { status: 400 })
 
     const emailContent = type === 'confirmed' ? confirmedEmail(viewing)
       : type === 'received' ? receivedEmail(viewing)
+      : type === 'tenant_found' ? tenantFoundEmail(viewing, moveInDate)
       : cancelledEmail(viewing)
 
     const res = await fetch('https://api.resend.com/emails', {
