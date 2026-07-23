@@ -467,6 +467,8 @@ export default function AdminDashboard() {
     if (tab === 'users' && !usersLoaded) loadUsers()
     if (tab === 'staff' && !staffLoaded) loadStaff()
     if (tab === 'properties' && !adminPropsLoaded) loadAdminProps()
+    if (tab === 'properties' && !maintenanceLoaded) loadMaintenance()
+    if (tab === 'properties' && !complianceAlertsLoaded) loadComplianceAlerts()
     if (tab === 'maintenance' && !maintenanceLoaded) loadMaintenance()
     if (tab === 'maintenance' && !complianceAlertsLoaded) loadComplianceAlerts()
     if (tab === 'todo' && !adminPropsLoaded) loadAdminProps()
@@ -2619,29 +2621,29 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
   }
   const daysLabel = (days: number) => days === 0 ? 'today' : days === 1 ? 'tomorrow' : days < 0 ? `${Math.abs(days)} days ago` : `in ${days} days`
 
-  interface TodoItem { id: string; priority: 'urgent' | 'soon' | 'info'; category: string; title: string; detail: string; action?: () => void; actionLabel?: string }
+  interface TodoItem { id: string; priority: 'urgent' | 'soon' | 'info'; category: string; title: string; detail: string; property_id?: string; action?: () => void; actionLabel?: string }
   const liveTodoItems: TodoItem[] = [
     ...adminProps.filter(p => p.move_in_date).map(p => {
       const days = daysUntilDate(p.move_in_date!)
-      return { id: `movein-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move In', title: p.address, detail: `Tenant moving in ${daysLabel(days)} — ${fmtDate(p.move_in_date!)}`, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
+      return { id: `movein-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move In', title: p.address, detail: `Tenant moving in ${daysLabel(days)} — ${fmtDate(p.move_in_date!)}`, property_id: p.id, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
     }),
     ...adminProps.filter(p => p.move_out_date).map(p => {
       const days = daysUntilDate(p.move_out_date!)
-      return { id: `moveout-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move Out', title: p.address, detail: `Tenant moving out ${daysLabel(days)} — ${fmtDate(p.move_out_date!)}`, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
+      return { id: `moveout-${p.id}`, priority: (days <= 3 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Move Out', title: p.address, detail: `Tenant moving out ${daysLabel(days)} — ${fmtDate(p.move_out_date!)}`, property_id: p.id, action: () => { setSelectedProperty(p); setTab('properties') }, actionLabel: 'View' }
     }),
     ...tenancyNotices.map(n => {
       const days = daysUntilDate(n.vacate_date)
-      return { id: `notice-${n.id}`, priority: (days <= 7 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Notice', title: n.properties?.address ?? 'Unknown property', detail: `${n.profiles?.full_name ?? 'Tenant'} vacating ${daysLabel(days)} — ${fmtDate(n.vacate_date)}`, action: () => { const p = adminProps.find(pr => pr.id === n.property_id); if (p) { setSelectedProperty(p); setTab('properties') } }, actionLabel: 'View' }
+      return { id: `notice-${n.id}`, priority: (days <= 7 ? 'urgent' : days <= 14 ? 'soon' : 'info') as TodoItem['priority'], category: 'Notice', title: n.properties?.address ?? 'Unknown property', detail: `${n.profiles?.full_name ?? 'Tenant'} vacating ${daysLabel(days)} — ${fmtDate(n.vacate_date)}`, property_id: n.property_id, action: () => { const p = adminProps.find(pr => pr.id === n.property_id); if (p) { setSelectedProperty(p); setTab('properties') } }, actionLabel: 'View' }
     }),
     ...viewingRequests.filter(v => v.status === 'pending').map(v => ({
-      id: `viewing-${v.id}`, priority: 'soon' as const, category: 'Viewing', title: v.properties?.address ?? 'Unknown property', detail: `${v.name} — ${fmtDate(v.preferred_date)} at ${v.preferred_time}`, action: () => setTab('diary'), actionLabel: 'Confirm',
+      id: `viewing-${v.id}`, priority: 'soon' as const, category: 'Viewing', title: v.properties?.address ?? 'Unknown property', detail: `${v.name} — ${fmtDate(v.preferred_date)} at ${v.preferred_time}`, property_id: v.property_id ?? undefined, action: () => setTab('diary'), actionLabel: 'Confirm',
     })),
     ...maintenanceItems.filter(m => (m.status === 'open' || m.status === 'in_progress') && (m.priority === 'emergency' || m.priority === 'urgent')).map(m => ({
-      id: `maint-${m.id}`, priority: (m.priority === 'emergency' ? 'urgent' : 'soon') as TodoItem['priority'], category: m.priority === 'emergency' ? 'Emergency' : 'Urgent Maintenance', title: m.title ?? 'Maintenance request', detail: m.status === 'in_progress' ? 'In progress' : 'Open — not yet assigned', action: () => setTab('maintenance'), actionLabel: 'View',
+      id: `maint-${m.id}`, priority: (m.priority === 'emergency' ? 'urgent' : 'soon') as TodoItem['priority'], category: m.priority === 'emergency' ? 'Emergency' : 'Urgent Maintenance', title: m.title ?? 'Maintenance request', detail: m.status === 'in_progress' ? 'In progress' : 'Open — not yet assigned', property_id: m.property_id ?? undefined, action: () => setTab('maintenance'), actionLabel: 'View',
     })),
     ...complianceAlerts.map(c => {
       const days = c.expiry_date ? daysUntilDate(c.expiry_date) : -999
-      return { id: `cert-${c.id}`, priority: (days < 0 ? 'urgent' : days <= 30 ? 'soon' : 'info') as TodoItem['priority'], category: 'Certificate', title: c.properties?.address ?? 'Unknown property', detail: `${c.type} ${days < 0 ? `expired ${Math.abs(days)} days ago` : `expiring ${daysLabel(days)}`}`, action: () => { setTab('maintenance'); setMaintenanceFilter('compliance') }, actionLabel: 'View' }
+      return { id: `cert-${c.id}`, priority: (days < 0 ? 'urgent' : days <= 30 ? 'soon' : 'info') as TodoItem['priority'], category: 'Certificate', title: c.properties?.address ?? 'Unknown property', detail: `${c.type} ${days < 0 ? `expired ${Math.abs(days)} days ago` : `expiring ${daysLabel(days)}`}`, property_id: c.property_id, action: () => { setTab('maintenance'); setMaintenanceFilter('compliance') }, actionLabel: 'View' }
     }),
   ]
 
@@ -4162,10 +4164,10 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
               </div>
             )}
           </div>
-          {/* ── Property Jobs ── */}
+          {/* ── Property To Do ── */}
           <div style={{ margin: '8px 16px 0', ...CARD, padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', margin: 0 }}>Jobs</p>
+              <p style={{ fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8899aa', margin: 0 }}>To Do</p>
               <div style={{ display: 'flex', gap: 6 }}>
                 {(['active', 'done'] as const).map(f => (
                   <button key={f} type="button" onClick={() => setJobsStatusFilter(f)}
@@ -4221,12 +4223,39 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 </div>
                 <button type="button" onClick={addPropertyJob} disabled={newJobSaving || !newJobTitle.trim()}
                   style={{ alignSelf: 'flex-end', padding: '8px 18px', borderRadius: 8, background: newJobTitle.trim() ? '#e8edf5' : 'rgba(255,255,255,0.06)', color: newJobTitle.trim() ? '#0d1b2e' : '#8899aa', border: 'none', fontSize: 12, fontWeight: 600, cursor: newJobTitle.trim() ? 'pointer' : 'default' }}>
-                  {newJobSaving ? 'Adding…' : 'Add Job'}
+                  {newJobSaving ? 'Adding…' : 'Add Task'}
                 </button>
               </div>
             )}
 
-            {/* Job list */}
+            {/* Auto-generated to-dos for this property */}
+            {(() => {
+              const propTodos = todoItems.filter(i => i.property_id === selectedProperty.id)
+              if (propTodos.length === 0) return null
+              const priorityColor = (p: TodoItem['priority']) => p === 'urgent' ? '#f87171' : p === 'soon' ? '#fbbf24' : '#60a5fa'
+              const priorityBg = (p: TodoItem['priority']) => p === 'urgent' ? 'rgba(248,113,113,0.08)' : p === 'soon' ? 'rgba(251,191,36,0.08)' : 'rgba(96,165,250,0.08)'
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+                  {propTodos.map(item => (
+                    <div key={item.id} style={{ background: priorityBg(item.priority), border: `1px solid ${priorityColor(item.priority)}30`, borderRadius: 8, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: priorityColor(item.priority), fontWeight: 600 }}>{item.category}</span>
+                        <p style={{ fontSize: 12, color: '#e8edf5', margin: '2px 0 0', lineHeight: 1.4 }}>{item.detail}</p>
+                      </div>
+                      {item.action && item.actionLabel && (
+                        <button type="button" onClick={item.action}
+                          style={{ fontSize: 10, padding: '3px 10px', borderRadius: 6, background: `${priorityColor(item.priority)}15`, color: priorityColor(item.priority), border: `1px solid ${priorityColor(item.priority)}30`, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                          {item.actionLabel}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', margin: '4px 0' }} />
+                </div>
+              )
+            })()}
+
+            {/* Manual task list */}
             {propertyJobsLoading ? (
               <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '12px 0' }}>Loading…</p>
             ) : (() => {
@@ -4238,7 +4267,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
 
               if (filtered.length === 0) {
                 if (jobsStatusFilter === 'done') return (
-                  <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No completed jobs</p>
+                  <p style={{ fontSize: 12, color: '#8899aa', textAlign: 'center', padding: '8px 0' }}>No completed tasks</p>
                 )
                 // Quick-start workflow buttons
                 return (
@@ -4258,7 +4287,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                       <p style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', margin: '0 0 4px' }}>Needs cleaning & repairs</p>
                       <p style={{ fontSize: 11, color: '#8899aa', margin: 0 }}>Clean & repair same day tenant leaves · Photograph & list immediately after · Viewings while referencing</p>
                     </button>
-                    {workflowStarting && <p style={{ fontSize: 11, color: '#8899aa', textAlign: 'center' }}>Creating jobs…</p>}
+                    {workflowStarting && <p style={{ fontSize: 11, color: '#8899aa', textAlign: 'center' }}>Creating tasks…</p>}
                   </div>
                 )
               }
