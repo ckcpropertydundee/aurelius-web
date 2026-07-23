@@ -278,7 +278,6 @@ export default function AdminDashboard() {
   const [compliancePresetType, setCompliancePresetType] = useState<string | undefined>(undefined)
   const [editComplianceItem, setEditComplianceItem] = useState<ComplianceItem | null>(null)
   const [confirmDeleteComplianceId, setConfirmDeleteComplianceId] = useState<string | null>(null)
-  const [confirmingPhysicalCheck, setConfirmingPhysicalCheck] = useState<string | null>(null)
   const [prtDoc, setPrtDoc] = useState<{ id: string; label: string; url: string | null; uploaded_at: string } | null>(null)
   const [prtLoading, setPrtLoading] = useState(false)
   const [prtUploading, setPrtUploading] = useState(false)
@@ -2326,22 +2325,6 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
     }
   }
 
-  async function markPhysicallyChecked(certLabel: string) {
-    if (!selectedProperty) return
-    setConfirmingPhysicalCheck(certLabel)
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: newItem, error } = await supabase.from('compliance_items').insert({
-      property_id: selectedProperty.id,
-      type: certLabel,
-      issue_date: today,
-      expiry_date: null,
-      document_url: null,
-      notes: null,
-    }).select('id, property_id, type, issue_date, expiry_date, status, document_url, notes, uploaded_at, pdf_url, cleanliness_comment, odour_comment, heat_detector_present, smoke_detector_present, co_detector_present').single()
-    setConfirmingPhysicalCheck(null)
-    if (error) { console.error('markPhysicallyChecked:', error); return }
-    setComplianceItems(prev => [...prev, newItem as ComplianceItem])
-  }
 
   async function handleListingToggle(newIsListed: boolean) {
     if (!selectedProperty) return
@@ -4011,8 +3994,7 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
               { key: 'eicr', label: 'EICR (Electrical)', hint: 'Every 5 years', canMark: false },
               { key: 'epc', label: 'EPC', hint: '10-year validity — required on all adverts', canMark: false },
               { key: 'legionella', label: 'Legionella Risk Assessment', hint: 'Legally required — duty of care', canMark: false },
-              { key: 'smoke', label: 'Smoke & CO Alarms', hint: 'Physical check — no PDF required', canMark: true },
-              { key: 'heat', label: 'Heat Alarms', hint: 'Required in every kitchen — HATISS', canMark: true },
+
             ]
             const now = new Date()
             const statuses = requiredCerts.map(cert => {
@@ -4045,22 +4027,12 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                           <span style={{ fontSize: 12, color: '#e8edf5' }}>{cert.label}</span>
                           <span style={{ fontSize: 10, color: '#8899aa', marginLeft: 6 }}>{cert.hint}</span>
                         </div>
-                        {cert.canMark && cert.status === 'missing' ? (
-                          <button
-                            type="button"
-                            disabled={confirmingPhysicalCheck === cert.key}
-                            onClick={() => markPhysicallyChecked(cert.label)}
-                            style={{ fontSize: 10, fontWeight: 600, padding: '2px 10px', borderRadius: 4, background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                            {confirmingPhysicalCheck === cert.key ? 'Saving…' : 'Confirm Checked'}
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{label}</span>
-                        )}
+                        <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{label}</span>
                       </div>
                     )
                   })}
                 </div>
-                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, lineHeight: 1.4 }}>Use "+ Add" in the Compliance Certificates section below to upload documents. Physical checks can be confirmed directly above.</p>
+                <p style={{ fontSize: 10, color: '#8899aa', marginTop: 10, lineHeight: 1.4 }}>Use "+ Add" in the Compliance Certificates section below to upload these documents.</p>
               </div>
             )
           })()}
@@ -6688,8 +6660,6 @@ function ComplianceDetailModal({ item, onClose, onViewProperty, onJobCreated }: 
     'Electrical Installation Condition Report (EICR)',
     'Energy Performance Certificate (EPC)',
     'Legionella Risk Assessment',
-    'Smoke & CO Alarms',
-    'Heat Alarms',
     'PAT Testing',
     'Fire Safety Check',
     'Portable Appliance Testing',
@@ -8858,8 +8828,6 @@ const CERT_TYPES = [
   'EICR',
   'EPC',
   'Legionella Risk Assessment',
-  'Smoke & CO Alarms',
-  'Heat Alarms',
   'PAT Testing',
   'Fire Risk Assessment',
   'HMO Licence',
