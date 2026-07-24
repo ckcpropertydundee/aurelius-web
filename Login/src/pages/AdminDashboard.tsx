@@ -3033,8 +3033,8 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
         const totalColl = activeRows.reduce((s, r) => s + Math.min(r.collected, r.expected), 0)
         const outstanding = Math.max(totalExp - totalColl, 0)
         const paidCount = activeRows.filter(r => r.isPaid).length
-        const fraction = totalExp > 0 ? totalColl / totalExp : 0
-        const displayFraction = Math.min(fraction, 1)
+        const fraction = totalExp > 0 ? (outstanding <= 0 ? 1 : Math.min(totalColl / totalExp, 1)) : 0
+        const displayFraction = fraction
         const monthName = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
         const ringColor = fraction >= 1 ? '#4ade80' : fraction >= 0.75 ? '#fbbf24' : '#f87171'
         return (
@@ -3124,8 +3124,8 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                                 <p style={{ fontSize: 14, fontFamily: 'Georgia, serif', color: row.isPaid ? '#4ade80' : '#fbbf24' }}>
                                   {row.isProRated
                                     ? row.moveInDate
-                                      ? gbp(row.expected, 2)
-                                      : row.isPaid ? gbp(row.collected) : gbp(row.expected, 2)
+                                      ? gbp(row.expected, row.expected % 1 === 0 ? 0 : 2)
+                                      : row.isPaid ? gbp(row.collected, row.collected % 1 === 0 ? 0 : 2) : gbp(row.expected, row.expected % 1 === 0 ? 0 : 2)
                                     : row.isPaid ? gbp(row.collected) : gbp(row.expected)}
                                 </p>
                                 {!row.isPaid && <p style={{ fontSize: 10, color: '#8899aa', marginTop: 2 }}>due</p>}
@@ -3219,17 +3219,6 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 <p style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#e8edf5', fontWeight: 300 }}>{weekLabel}</p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button"
-                  onClick={() => { if (!adminPropsLoaded && !adminPropsLoading) loadAdminProps(); setShowAddViewing(o => !o) }}
-                  style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: showAddViewing ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.06)', color: showAddViewing ? '#4ade80' : '#8899aa', border: `1px solid ${showAddViewing ? 'rgba(74,222,128,0.25)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer' }}>
-                  {showAddViewing ? '✕ Cancel' : '+ Add Viewing'}
-                </button>
-                {diaryWeekOffset !== 0 && (
-                  <button type="button" onClick={() => setDiaryWeekOffset(0)}
-                    style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
-                    Today
-                  </button>
-                )}
                 <button type="button" onClick={() => setDiaryWeekOffset(o => o - 1)}
                   style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   ‹
@@ -3237,6 +3226,17 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
                 <button type="button" onClick={() => setDiaryWeekOffset(o => o + 1)}
                   style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#8899aa', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   ›
+                </button>
+                {diaryWeekOffset !== 0 && (
+                  <button type="button" onClick={() => setDiaryWeekOffset(0)}
+                    style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)', cursor: 'pointer' }}>
+                    Today
+                  </button>
+                )}
+                <button type="button"
+                  onClick={() => { if (!adminPropsLoaded && !adminPropsLoading) loadAdminProps(); setShowAddViewing(o => !o) }}
+                  style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: showAddViewing ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.06)', color: showAddViewing ? '#4ade80' : '#8899aa', border: `1px solid ${showAddViewing ? 'rgba(74,222,128,0.25)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer' }}>
+                  {showAddViewing ? '✕ Cancel' : '+ Add Viewing'}
                 </button>
               </div>
             </div>
@@ -5030,13 +5030,13 @@ The Tenant giving the Landlord at least 28 days' notice in writing to terminate 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', gap: 10 }}>
             <input type="search" placeholder="Search address, postcode or landlord…" value={propSearch} onChange={(e) => setPropSearch(e.target.value)}
               style={{ flex: 1, background: '#0f1e35', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#e8edf5', outline: 'none' }} />
-            <button type="button" onClick={openAddPropertyModal}
-              style={{ padding: '7px 14px', borderRadius: 6, background: '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 12, fontWeight: 600, flexShrink: 0, letterSpacing: '0.04em' }}>
-              + Add
-            </button>
             <button type="button" onClick={() => { setAdminPropsLoaded(false); loadAdminProps() }}
               style={{ padding: '7px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: '#8899aa', border: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            </button>
+            <button type="button" onClick={openAddPropertyModal}
+              style={{ padding: '7px 14px', borderRadius: 6, background: '#e8edf5', color: '#0d1b2e', border: 'none', fontSize: 12, fontWeight: 600, flexShrink: 0, letterSpacing: '0.04em' }}>
+              + Add
             </button>
           </div>
           <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 6, overflowX: 'auto', alignItems: 'center' }}>
